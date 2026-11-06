@@ -6,7 +6,7 @@
   const f = () => $("fecha").textContent = new Date().toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
   f(); setInterval(f, 30000);
   window.setUser = (n, rol) => {
-    $("usr").innerHTML = n ? `<span class="av">${n[0].toUpperCase()}</span><span><b>${n}</b><small>${rol || "Jugador"}</small></span>` : "";
+    $("usr").innerHTML = n ? `<span class="av">${n[0].toUpperCase()}</span><span><b>Hola, ${n}</b><small>${rol || "Jugador"}</small></span>` : "";
     $("ses").textContent = n ? "Sesión: " + n : "";
   };
 })();
