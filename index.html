@@ -40,8 +40,17 @@ async function inicio(msg = "") {
     if (!n) return inicio("Elige tu nombre primero.");
     try { if (await get("resultados", n)) return inicio("Ya jugaste. Cada persona juega una sola vez."); }
     catch (e) { return inicio("No se pudo verificar tu nombre."); }
-    jugar(n);
+    confirmar(n);
   };
+}
+
+function confirmar(n) {
+  $.innerHTML = `<h1>Confirma tu nombre</h1>${m("Confirmación")}<div class="card">
+  <p>¿Estás seguro de que eres <b>${n}</b>?</p>
+  <p class="note">Solo puedes jugar una vez y no podrás cambiar de nombre después.</p>
+  <button class="main" id="si">Sí, soy yo</button><button class="ghost" id="no">No, volver</button></div>`;
+  document.getElementById("si").onclick = () => jugar(n);
+  document.getElementById("no").onclick = () => inicio();
 }
 
 function jugar(n) {
