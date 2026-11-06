@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panel del organizador</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="shell">
+<aside><div class="brand">¿QUIÉN ES?</div><nav><a class="ni" href="index.html">Jugar</a><a class="ni on" href="admin.html">Organizador</a></nav></aside>
+<div class="col"><header><button class="ib" id="burger" aria-label="Menú">☰</button><span class="sp"></span><button class="ib" id="tema" aria-label="Cambiar tema">◐</button><div class="usr" id="usr"></div></header>
+<main>
+<h1>Panel del organizador</h1><div class="crumb">⌂ Inicio › <b>Configuración y resultados</b></div>
+<div class="card" id="login"><input id="em" type="email" placeholder="Correo del organizador"><input id="pw" type="password" placeholder="Contraseña">
+<button class="main" id="in">Entrar</button><p class="err" id="e"></p></div>
+<div id="panel" hidden>
+<div class="card"><h2>1. Configuración</h2>
+<label for="ins">Personas inscritas (una por línea)</label><textarea id="ins" rows="8"></textarea>
+<label for="pn">Nombre de P1, P2… P6 (una por línea, en ese orden)</label><textarea id="pn" rows="6"></textarea>
+<button class="main" id="pub">Publicar configuración</button><p class="note" id="m1"></p></div>
+<div class="card"><h2>2. Resultados</h2><button class="main" id="calc">Calcular ranking</button><div id="out"></div>
+<button class="ghost" id="rk" hidden>Publicar ranking a los jugadores</button><p class="note" id="m2"></p></div>
+</div></main>
+<footer><span>© 2026 · Juego interno</span><span id="ses"></span><span><i class="dot"></i>Conectado &nbsp; <span id="fecha"></span></span></footer></div></div>
+<script src="ui.js"></script>
+<script type="module">
+import cfg from "./firebase-config.js";
+const B = "https://www.gstatic.com/firebasejs/10.12.0/";
+const { initializeApp } = await import(B + "firebase-app.js");
+const fs = await import(B + "firebase-firestore.js"), au = await import(B + "firebase-auth.js");
+const app = initializeApp(cfg), db = fs.getFirestore(app), auth = au.getAuth(app);
+const $ = id => document.getElementById(id), T = 10;
+const lines = id => $(id).value.split("\n").map(s => s.trim()).filter(Boolean);
+$("ins").value = localStorage.ins || ""; $("pn").value = localStorage.pn || ""; // el mapa P→nombre solo vive en ESTE navegador
+au.onAuthStateChanged(auth, u => { $("login").hidden = !!u; $("panel").hidden = !u; setUser(u ? u.email : "", "Organizador"); });
+$("in").onclick = async () => { try { await au.signInWithEmailAndPassword(auth, $("em").value, $("pw").value); } catch (e) { $("e").textContent = "Correo o contraseña incorrectos."; } };
+
+$("pub").onclick = async () => {
+  const ins = lines("ins"), pn = lines("pn");
+  if (pn.length < 4) return $("m1").textContent = "Escribe al menos 4 nombres para P1, P2…";
+  localStorage.ins = ins.join("\n"); localStorage.pn = pn.join("\n");
+  try {
+    // Se publican los nombres en orden alfabético: así nadie puede deducir qué foto es quién.
+    await fs.setDoc(fs.doc(db, "publico", "config"), { participantes: ins, nombres: [...pn].sort((a, b) => a.localeCompare(b, "es")) });
+    $("m1").textContent = "Publicado.";
+  } catch (e) { $("m1").textContent = "Error al publicar."; }
+};
+
+let filas = [];
+$("calc").onclick = async () => {
+  const pn = lines("pn");
+  try {
+    const s = await fs.getDocs(fs.collection(db, "resultados")); filas = [];
+    s.forEach(d => {
+      let a = 0, t = 0, p = 0; const r = d.data();
+      r.resp.forEach(x => { t += x.t; if (x.e === pn[x.p - 1]) { a++; p += Math.round(100 + 900 * (1 - x.t / T)); } });
+      filas.push({ n: d.id, aciertos: a, total: r.resp.length, tiempo: +t.toFixed(2), puntos: p });
+    });
+    filas.sort((a, b) => b.puntos - a.puntos || a.tiempo - b.tiempo);
+    $("out").className = "tbl card"; $("out").innerHTML = `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
+    ${filas.map((x, i) => `<tr><td>${i + 1}</td><td>${x.n}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>`;
+    $("rk").hidden = !filas.length; $("m2").textContent = `Han jugado ${filas.length} personas.`;
+  } catch (e) { $("m2").textContent = "No se pudieron leer los resultados."; }
+};
+$("rk").onclick = async () => {
+  try { await fs.setDoc(fs.doc(db, "publico", "ranking"), { filas, fecha: Date.now() }); $("m2").textContent = "Ranking publicado."; }
+  catch (e) { $("m2").textContent = "Error al publicar."; }
+};
+</script></body></html>
