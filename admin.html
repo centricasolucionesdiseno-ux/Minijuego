@@ -19,17 +19,30 @@
 </div></main>
 <footer><span>© 2026 · Juego interno</span><span id="ses"></span><span><i class="dot"></i>Conectado &nbsp; <span id="fecha"></span></span></footer></div></div>
 <script src="ui.js"></script>
+<script>
+/* Si el módulo de Firebase no llega a cargar, este aviso reemplaza al silencio. */
+document.getElementById("in").onclick = () => { document.getElementById("e").textContent = "No cargó Firebase. Abre esta página desde su dirección de GitHub Pages (https://…), no con doble clic en el archivo, y revisa que firebase-config.js tenga tus datos."; };
+</script>
 <script type="module">
 import cfg from "./firebase-config.js";
 const B = "https://www.gstatic.com/firebasejs/10.12.0/";
-const { initializeApp } = await import(B + "firebase-app.js");
-const fs = await import(B + "firebase-firestore.js"), au = await import(B + "firebase-auth.js");
-const app = initializeApp(cfg), db = fs.getFirestore(app), auth = au.getAuth(app);
 const $ = id => document.getElementById(id), T = 10;
+let fs, au, db, auth;
+try {
+  const { initializeApp } = await import(B + "firebase-app.js");
+  fs = await import(B + "firebase-firestore.js"); au = await import(B + "firebase-auth.js");
+  const app = initializeApp(cfg); db = fs.getFirestore(app); auth = au.getAuth(app);
+} catch (e) { $("e").textContent = "No se pudo iniciar Firebase. Revisa que firebase-config.js tenga tus datos. (" + (e.code || e.message) + ")"; }
 const lines = id => $(id).value.split("\n").map(s => s.trim()).filter(Boolean);
 $("ins").value = localStorage.ins || ""; $("pn").value = localStorage.pn || ""; // el mapa P→nombre solo vive en ESTE navegador
-au.onAuthStateChanged(auth, u => { $("login").hidden = !!u; $("panel").hidden = !u; setUser(u ? u.email : "", "Organizador"); });
-$("in").onclick = async () => { try { await au.signInWithEmailAndPassword(auth, $("em").value, $("pw").value); } catch (e) { $("e").textContent = "Correo o contraseña incorrectos."; } };
+if (auth) au.onAuthStateChanged(auth, u => { $("login").hidden = !!u; $("panel").hidden = !u; setUser(u ? u.email : "", "Organizador"); });
+const MSG = { "auth/invalid-credential": "Correo o contraseña incorrectos.", "auth/invalid-email": "El correo no es válido.", "auth/operation-not-allowed": "Falta activar Correo/contraseña en Authentication → Método de acceso.", "auth/unauthorized-domain": "Agrega este dominio en Authentication → Configuración → Dominios autorizados.", "auth/network-request-failed": "Sin conexión con Firebase.", "auth/invalid-api-key": "La apiKey de firebase-config.js no es válida.", "auth/too-many-requests": "Demasiados intentos. Espera unos minutos." };
+$("in").onclick = async () => {
+  if (!auth) return;
+  $("e").textContent = "Entrando…";
+  try { await au.signInWithEmailAndPassword(auth, $("em").value.trim(), $("pw").value); $("e").textContent = ""; }
+  catch (e) { $("e").textContent = (MSG[e.code] || "No se pudo entrar.") + " (" + e.code + ")"; }
+};
 
 $("pub").onclick = async () => {
   const ins = lines("ins"), pn = lines("pn");
