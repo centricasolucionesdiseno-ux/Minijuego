@@ -50,3 +50,12 @@ tr:nth-child(even):not(:first-child){background:var(--row)}
 @media(max-width:760px){aside{position:fixed;inset:0 auto 0 0;z-index:5;transform:translateX(-100%);transition:transform .2s}body.nav aside{transform:none}main{padding:20px 16px}}
 @media(min-width:761px){#burger{display:none}}
 @media(prefers-reduced-motion:reduce){aside{transition:none}}
+.fila{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.fila:last-child{border-bottom:0}
+.fila button{width:auto}
+.fila small{color:var(--mut)}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.tabs button{width:auto}
+.chk{display:flex;align-items:center;margin:6px 0}
+input[type=checkbox]{width:auto;margin:0 10px 0 0}
+.q{margin:16px 0 0}
