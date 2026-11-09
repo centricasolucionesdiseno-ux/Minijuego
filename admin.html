@@ -43,6 +43,7 @@ const msg = (id, t) => $(id).textContent = t;
 const ref = (c, d) => fs.doc(db, c, d);
 const get = async (c, d) => { const s = await fs.getDoc(ref(c, d)); return s.exists() ? s.data() : null; };
 const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
+const err = e => " (" + (e.code || e.message) + ")" + (e.code === "permission-denied" ? ": actualiza las reglas de Firestore (falta la colección claves)" : "");
 const T = 10, T0 = [{ id: "personas", titulo: "¿Quién es?", tipo: "personas", activo: false }, { id: "q1", titulo: "Quiz general 1", tipo: "general", activo: false }, { id: "q2", titulo: "Quiz general 2", tipo: "general", activo: false }];
 let Q = T0.map(x => ({ ...x })), filas = [];
 const guardarQ = () => fs.setDoc(ref("publico", "config"), { quizzes: Q }, { merge: true });
@@ -56,9 +57,9 @@ function pintar() {
   $("tog").innerHTML = Q.map(q => `<label class="chk"><input type="checkbox" data-id="${q.id}" ${q.activo ? "checked" : ""}>${q.titulo}</label>`).join("");
   $("tog").querySelectorAll("input").forEach(i => i.onchange = async () => {
     Q.find(q => q.id === i.dataset.id).activo = i.checked;
-    try { await guardarQ(); msg("m0", "Guardado."); } catch (e) { msg("m0", "Error al guardar."); }
+    try { await guardarQ(); msg("m0", "Guardado."); } catch (e) { msg("m0", "Error al guardar" + err(e)); }
   });
-  $("qsel").innerHTML = Q.map(q => `<option value="${q.id}">${q.titulo}</option>`).join("");
+  $("qsel").innerHTML = Q.map(q => `<option value="${q.id}">${q.titulo}</option>`).join("") + '<option value="general">General (suma de todos)</option>';
   Q.forEach(q => $("ti-" + q.id).value = q.titulo);
 }
 async function cargar() {
@@ -87,7 +88,7 @@ $("pubP").onclick = async () => {
     await fs.setDoc(ref("claves", "personas"), { pn });
     await fs.setDoc(ref("publico", "config"), { participantes: ins, opciones, quizzes: Q }, { merge: true });
     msg("m1", "Publicado."); pintar();
-  } catch (e) { msg("m1", "Error al publicar."); }
+  } catch (e) { msg("m1", "Error al publicar" + err(e)); }
 };
 
 document.querySelectorAll("[data-pub]").forEach(b => b.onclick = async () => {
@@ -102,37 +103,42 @@ document.querySelectorAll("[data-pub]").forEach(b => b.onclick = async () => {
     await fs.setDoc(ref("claves", id), { c: ps.map(p => lim(p.raw.find(x => x.startsWith("*")))), txt });
     await fs.setDoc(ref("publico", "quiz_" + id), { preguntas: ps.map(p => ({ t: p.t, o: p.raw.map(lim) })) });
     await guardarQ(); pintar(); msg(m, `Publicado (${ps.length} preguntas${ps.length !== 10 ? ", ojo: no son 10" : ""}).`);
-  } catch (e) { msg(m, "Error al publicar."); }
+  } catch (e) { msg(m, "Error al publicar" + err(e)); }
 });
 
+const puntuar = (r, K) => { let a = 0, t = 0, p = 0; r.resp.forEach(x => { t += x.t; if (x.e === (r.quiz === "personas" ? K.pn[x.p - 1] : K.c[x.i])) { a++; p += Math.round(100 + 900 * (1 - x.t / T)); } }); return { a, t, p, n: r.resp.length }; };
 $("calc").onclick = async () => {
   const id = $("qsel").value;
   try {
-    const K = await get("claves", id); if (!K) return msg("m2", "Ese quiz aún no está publicado.");
-    const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id))); filas = [];
+    const K = {};
+    for (const q of Q) if (id === "general" || q.id === id) { const k = await get("claves", q.id); if (k) K[q.id] = k; }
+    if (!Object.keys(K).length) return msg("m2", "Ese quiz aún no está publicado.");
+    const s = await fs.getDocs(id === "general" ? fs.collection(db, "resultados") : fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id)));
+    const acc = {};
     s.forEach(d => {
-      const r = d.data(); let a = 0, t = 0, p = 0;
-      r.resp.forEach(x => { t += x.t; if (x.e === (id === "personas" ? K.pn[x.p - 1] : K.c[x.i])) { a++; p += Math.round(100 + 900 * (1 - x.t / T)); } });
-      filas.push({ n: r.name, aciertos: a, total: r.resp.length, tiempo: +t.toFixed(2), puntos: p });
+      const r = d.data(); if (!K[r.quiz]) return;
+      const u = puntuar(r, K[r.quiz]), o = acc[r.name] ||= { n: r.name, aciertos: 0, total: 0, tiempo: 0, puntos: 0 };
+      o.aciertos += u.a; o.total += u.n; o.tiempo += u.t; o.puntos += u.p;
     });
-    filas.sort((a, b) => b.puntos - a.puntos || a.tiempo - b.tiempo);
+    filas = Object.values(acc).map(o => ({ ...o, tiempo: +o.tiempo.toFixed(2) })).sort((a, b) => b.puntos - a.puntos || a.tiempo - b.tiempo);
     $("out").className = "tbl card";
     $("out").innerHTML = `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
     ${filas.map((x, i) => `<tr><td>${i + 1}</td><td>${x.n}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>`;
-    $("rk").hidden = !filas.length; msg("m2", `Han jugado ${filas.length} personas.`);
-  } catch (e) { msg("m2", "No se pudieron leer los resultados."); }
+    $("rk").hidden = !filas.length; msg("m2", `${filas.length} personas en el ranking.`);
+  } catch (e) { msg("m2", "No se pudieron leer los resultados" + err(e)); }
 };
 $("rk").onclick = async () => {
   try { await fs.setDoc(ref("publico", "ranking_" + $("qsel").value), { filas, fecha: Date.now() }); msg("m2", "Ranking publicado."); }
-  catch (e) { msg("m2", "Error al publicar."); }
+  catch (e) { msg("m2", "Error al publicar" + err(e)); }
 };
 $("rst").onclick = async () => {
-  const id = $("qsel").value, q = Q.find(x => x.id === id);
+  const id = $("qsel").value; if (id === "general") return msg("m2", "Elige un quiz concreto para reiniciarlo.");
+  const q = Q.find(x => x.id === id);
   if (!confirm(`¿Borrar TODOS los resultados y el ranking de "${q.titulo}"? Todos podrán volver a jugarlo.`)) return;
   try {
     const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id)));
     const b = fs.writeBatch(db); s.forEach(d => b.delete(d.ref)); b.delete(ref("publico", "ranking_" + id)); await b.commit();
     filas = []; $("out").innerHTML = ""; $("out").className = ""; $("rk").hidden = true; msg("m2", `Reiniciado: ${s.size} resultados borrados.`);
-  } catch (e) { msg("m2", "No se pudo reiniciar."); }
+  } catch (e) { msg("m2", "No se pudo reiniciar" + err(e)); }
 };
 </script></body></html>
