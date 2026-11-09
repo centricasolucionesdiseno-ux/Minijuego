@@ -3,76 +3,136 @@
 <title>Panel del organizador</title><link rel="stylesheet" href="style.css"></head>
 <body>
 <div class="shell">
-<aside><div class="brand">¿QUIÉN ES?</div><nav><a class="ni" href="index.html">Jugar</a><a class="ni on" href="admin.html">Organizador</a></nav></aside>
+<aside><div class="brand">QUIZZES</div><nav><a class="ni" href="index.html">Jugar</a><a class="ni on" href="admin.html">Organizador</a></nav></aside>
 <div class="col"><header><button class="ib" id="burger" aria-label="Menú">☰</button><span class="sp"></span><button class="ib" id="tema" aria-label="Cambiar tema">◐</button><div class="usr" id="usr"></div></header>
 <main>
 <h1>Panel del organizador</h1><div class="crumb">⌂ Inicio › <b>Configuración y resultados</b></div>
 <div class="card" id="login"><input id="em" type="email" placeholder="Correo del organizador"><input id="pw" type="password" placeholder="Contraseña">
 <button class="main" id="in">Entrar</button><p class="err" id="e"></p></div>
 <div id="panel" hidden>
-<div class="card"><h2>1. Configuración</h2>
+<div class="card"><h2>Quizzes habilitados</h2><div id="tog"></div><p class="note" id="m0">Los jugadores solo ven los quizzes marcados.</p></div>
+<div class="card"><h2>Quiz de personas</h2>
+<label for="ti-personas">Título</label><input id="ti-personas">
 <label for="ins">Personas inscritas (una por línea)</label><textarea id="ins" rows="8"></textarea>
 <label for="pn">Nombre de P1, P2… P6 (una por línea, en ese orden)</label><textarea id="pn" rows="6"></textarea>
-<button class="main" id="pub">Publicar configuración</button><p class="note" id="m1"></p></div>
-<div class="card"><h2>2. Resultados</h2><button class="main" id="calc">Calcular ranking</button><div id="out"></div>
-<button class="ghost" id="rk" hidden>Publicar ranking a los jugadores</button><p class="note" id="m2"></p></div>
+<button class="main" id="pubP">Publicar quiz</button><p class="note" id="m1">Las 4 opciones de cada foto se arman solas: el nombre correcto más 3 al azar entre todas las personas.</p></div>
+<div class="card"><h2>Formato de los quizzes generales</h2><p class="note">Una pregunta por bloque, con una línea en blanco entre bloques. Línea 1: la pregunta. Líneas 2 a 5: las 4 opciones; marca la correcta con * al inicio. La foto de cada pregunta es opcional: media/q1-1.jpg, media/q1-2.jpg… (q2-1.jpg para el segundo quiz).</p></div>
+<div id="gen"></div>
+<div class="card"><h2>Resultados</h2><label for="qsel">Quiz</label><select id="qsel"></select>
+<button class="main" id="calc">Calcular ranking</button><div id="out"></div>
+<button class="ghost" id="rk" hidden>Publicar ranking a los jugadores</button>
+<button class="ghost" id="rst">Reiniciar este quiz (borra resultados y ranking)</button><p class="note" id="m2"></p></div>
 </div></main>
 <footer><span>© 2026 · Juego interno</span><span id="ses"></span><span><i class="dot"></i>Conectado &nbsp; <span id="fecha"></span></span></footer></div></div>
 <script src="ui.js"></script>
 <script>
-/* Si el módulo de Firebase no llega a cargar, este aviso reemplaza al silencio. */
 document.getElementById("in").onclick = () => { document.getElementById("e").textContent = "No cargó Firebase. Abre esta página desde su dirección de GitHub Pages (https://…), no con doble clic en el archivo, y revisa que firebase-config.js tenga tus datos."; };
 </script>
 <script type="module">
 import cfg from "./firebase-config.js";
 const B = "https://www.gstatic.com/firebasejs/10.12.0/";
-const $ = id => document.getElementById(id), T = 10;
+const $ = id => document.getElementById(id);
 let fs, au, db, auth;
 try {
   const { initializeApp } = await import(B + "firebase-app.js");
   fs = await import(B + "firebase-firestore.js"); au = await import(B + "firebase-auth.js");
   const app = initializeApp(cfg); db = fs.getFirestore(app); auth = au.getAuth(app);
-} catch (e) { $("e").textContent = "No se pudo iniciar Firebase. Revisa que firebase-config.js tenga tus datos. (" + (e.code || e.message) + ")"; }
+} catch (e) { $("e").textContent = "No se pudo iniciar Firebase. Revisa firebase-config.js. (" + (e.code || e.message) + ")"; }
 const lines = id => $(id).value.split("\n").map(s => s.trim()).filter(Boolean);
-$("ins").value = localStorage.ins || ""; $("pn").value = localStorage.pn || ""; // el mapa P→nombre solo vive en ESTE navegador
-if (auth) au.onAuthStateChanged(auth, u => { $("login").hidden = !!u; $("panel").hidden = !u; setUser(u ? u.email : "", "Organizador"); });
-const MSG = { "auth/invalid-credential": "Correo o contraseña incorrectos.", "auth/invalid-email": "El correo no es válido.", "auth/operation-not-allowed": "Falta activar Correo/contraseña en Authentication → Método de acceso.", "auth/unauthorized-domain": "Agrega este dominio en Authentication → Configuración → Dominios autorizados.", "auth/network-request-failed": "Sin conexión con Firebase.", "auth/invalid-api-key": "La apiKey de firebase-config.js no es válida.", "auth/too-many-requests": "Demasiados intentos. Espera unos minutos." };
+const msg = (id, t) => $(id).textContent = t;
+const ref = (c, d) => fs.doc(db, c, d);
+const get = async (c, d) => { const s = await fs.getDoc(ref(c, d)); return s.exists() ? s.data() : null; };
+const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
+const T = 10, T0 = [{ id: "personas", titulo: "¿Quién es?", tipo: "personas", activo: false }, { id: "q1", titulo: "Quiz general 1", tipo: "general", activo: false }, { id: "q2", titulo: "Quiz general 2", tipo: "general", activo: false }];
+let Q = T0.map(x => ({ ...x })), filas = [];
+const guardarQ = () => fs.setDoc(ref("publico", "config"), { quizzes: Q }, { merge: true });
+const poner = id => { const q = Q.find(x => x.id === id); q.titulo = $("ti-" + id).value.trim() || q.titulo; };
+
+$("gen").innerHTML = ["q1", "q2"].map((id, i) => `<div class="card"><h2>Quiz general ${i + 1}</h2>
+<label for="ti-${id}">Título</label><input id="ti-${id}"><label for="tx-${id}">Preguntas</label><textarea id="tx-${id}" rows="10"></textarea>
+<button class="main" data-pub="${id}">Publicar quiz ${i + 1}</button><p class="note" id="m-${id}"></p></div>`).join("");
+
+function pintar() {
+  $("tog").innerHTML = Q.map(q => `<label class="chk"><input type="checkbox" data-id="${q.id}" ${q.activo ? "checked" : ""}>${q.titulo}</label>`).join("");
+  $("tog").querySelectorAll("input").forEach(i => i.onchange = async () => {
+    Q.find(q => q.id === i.dataset.id).activo = i.checked;
+    try { await guardarQ(); msg("m0", "Guardado."); } catch (e) { msg("m0", "Error al guardar."); }
+  });
+  $("qsel").innerHTML = Q.map(q => `<option value="${q.id}">${q.titulo}</option>`).join("");
+  Q.forEach(q => $("ti-" + q.id).value = q.titulo);
+}
+async function cargar() {
+  try {
+    const c = await get("publico", "config"); if (c) { if (c.quizzes) Q = c.quizzes; $("ins").value = (c.participantes || []).join("\n"); }
+    const kp = await get("claves", "personas"); if (kp) $("pn").value = kp.pn.join("\n");
+    for (const id of ["q1", "q2"]) { const k = await get("claves", id); if (k) $("tx-" + id).value = k.txt || ""; }
+  } catch (e) { msg("m0", "No se pudo leer la configuración (¿reglas de Firestore actualizadas?)."); }
+  pintar();
+}
+if (auth) au.onAuthStateChanged(auth, u => { $("login").hidden = !!u; $("panel").hidden = !u; window.setUser?.(u ? u.email : "", "Organizador"); if (u) cargar(); });
+const MSG = { "auth/invalid-credential": "Correo o contraseña incorrectos.", "auth/invalid-email": "El correo no es válido.", "auth/operation-not-allowed": "Falta activar Correo/contraseña en Authentication.", "auth/unauthorized-domain": "Agrega este dominio en Authentication → Configuración → Dominios autorizados.", "auth/network-request-failed": "Sin conexión con Firebase.", "auth/invalid-api-key": "La apiKey de firebase-config.js no es válida.", "auth/too-many-requests": "Demasiados intentos. Espera unos minutos." };
 $("in").onclick = async () => {
-  if (!auth) return;
-  $("e").textContent = "Entrando…";
+  if (!auth) return; $("e").textContent = "Entrando…";
   try { await au.signInWithEmailAndPassword(auth, $("em").value.trim(), $("pw").value); $("e").textContent = ""; }
   catch (e) { $("e").textContent = (MSG[e.code] || "No se pudo entrar.") + " (" + e.code + ")"; }
 };
 
-$("pub").onclick = async () => {
-  const ins = lines("ins"), pn = lines("pn");
-  if (pn.length < 4) return $("m1").textContent = "Escribe al menos 4 nombres para P1, P2…";
-  localStorage.ins = ins.join("\n"); localStorage.pn = pn.join("\n");
+$("pubP").onclick = async () => {
+  const ins = lines("ins"), pn = lines("pn"), pool = [...new Set([...ins, ...pn])];
+  if (pn.length < 4 || pool.length < 4) return msg("m1", "Escribe al menos 4 nombres para P1, P2… y 4 personas en total.");
+  // Cada foto: nombre correcto + 3 al azar de todas las personas, ordenados A-Z para no delatar cuál es.
+  const opciones = pn.map(c => [c, ...shuffle(pool.filter(x => x !== c)).slice(0, 3)].sort((a, b) => a.localeCompare(b, "es")));
   try {
-    // Se publican los nombres en orden alfabético: así nadie puede deducir qué foto es quién.
-    await fs.setDoc(fs.doc(db, "publico", "config"), { participantes: ins, nombres: [...pn].sort((a, b) => a.localeCompare(b, "es")) });
-    $("m1").textContent = "Publicado.";
-  } catch (e) { $("m1").textContent = "Error al publicar."; }
+    poner("personas");
+    await fs.setDoc(ref("claves", "personas"), { pn });
+    await fs.setDoc(ref("publico", "config"), { participantes: ins, opciones, quizzes: Q }, { merge: true });
+    msg("m1", "Publicado."); pintar();
+  } catch (e) { msg("m1", "Error al publicar."); }
 };
 
-let filas = [];
-$("calc").onclick = async () => {
-  const pn = lines("pn");
+document.querySelectorAll("[data-pub]").forEach(b => b.onclick = async () => {
+  const id = b.dataset.pub, txt = $("tx-" + id).value, m = "m-" + id;
+  const ps = txt.trim() ? txt.trim().split(/\n\s*\n/).map(bl => { const l = bl.split("\n").map(s => s.trim()).filter(Boolean); return { t: l[0], raw: l.slice(1) }; }) : [];
+  if (!ps.length) return msg(m, "Escribe las preguntas.");
+  const bad = ps.findIndex(p => p.raw.length !== 4 || p.raw.filter(x => x.startsWith("*")).length !== 1);
+  if (bad >= 0) return msg(m, `La pregunta ${bad + 1} debe tener 4 opciones y una sola marcada con *.`);
+  const lim = x => x.replace(/^\*\s*/, "");
   try {
-    const s = await fs.getDocs(fs.collection(db, "resultados")); filas = [];
+    poner(id);
+    await fs.setDoc(ref("claves", id), { c: ps.map(p => lim(p.raw.find(x => x.startsWith("*")))), txt });
+    await fs.setDoc(ref("publico", "quiz_" + id), { preguntas: ps.map(p => ({ t: p.t, o: p.raw.map(lim) })) });
+    await guardarQ(); pintar(); msg(m, `Publicado (${ps.length} preguntas${ps.length !== 10 ? ", ojo: no son 10" : ""}).`);
+  } catch (e) { msg(m, "Error al publicar."); }
+});
+
+$("calc").onclick = async () => {
+  const id = $("qsel").value;
+  try {
+    const K = await get("claves", id); if (!K) return msg("m2", "Ese quiz aún no está publicado.");
+    const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id))); filas = [];
     s.forEach(d => {
-      let a = 0, t = 0, p = 0; const r = d.data();
-      r.resp.forEach(x => { t += x.t; if (x.e === pn[x.p - 1]) { a++; p += Math.round(100 + 900 * (1 - x.t / T)); } });
-      filas.push({ n: d.id, aciertos: a, total: r.resp.length, tiempo: +t.toFixed(2), puntos: p });
+      const r = d.data(); let a = 0, t = 0, p = 0;
+      r.resp.forEach(x => { t += x.t; if (x.e === (id === "personas" ? K.pn[x.p - 1] : K.c[x.i])) { a++; p += Math.round(100 + 900 * (1 - x.t / T)); } });
+      filas.push({ n: r.name, aciertos: a, total: r.resp.length, tiempo: +t.toFixed(2), puntos: p });
     });
     filas.sort((a, b) => b.puntos - a.puntos || a.tiempo - b.tiempo);
-    $("out").className = "tbl card"; $("out").innerHTML = `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
+    $("out").className = "tbl card";
+    $("out").innerHTML = `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
     ${filas.map((x, i) => `<tr><td>${i + 1}</td><td>${x.n}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>`;
-    $("rk").hidden = !filas.length; $("m2").textContent = `Han jugado ${filas.length} personas.`;
-  } catch (e) { $("m2").textContent = "No se pudieron leer los resultados."; }
+    $("rk").hidden = !filas.length; msg("m2", `Han jugado ${filas.length} personas.`);
+  } catch (e) { msg("m2", "No se pudieron leer los resultados."); }
 };
 $("rk").onclick = async () => {
-  try { await fs.setDoc(fs.doc(db, "publico", "ranking"), { filas, fecha: Date.now() }); $("m2").textContent = "Ranking publicado."; }
-  catch (e) { $("m2").textContent = "Error al publicar."; }
+  try { await fs.setDoc(ref("publico", "ranking_" + $("qsel").value), { filas, fecha: Date.now() }); msg("m2", "Ranking publicado."); }
+  catch (e) { msg("m2", "Error al publicar."); }
+};
+$("rst").onclick = async () => {
+  const id = $("qsel").value, q = Q.find(x => x.id === id);
+  if (!confirm(`¿Borrar TODOS los resultados y el ranking de "${q.titulo}"? Todos podrán volver a jugarlo.`)) return;
+  try {
+    const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id)));
+    const b = fs.writeBatch(db); s.forEach(d => b.delete(d.ref)); b.delete(ref("publico", "ranking_" + id)); await b.commit();
+    filas = []; $("out").innerHTML = ""; $("out").className = ""; $("rk").hidden = true; msg("m2", `Reiniciado: ${s.size} resultados borrados.`);
+  } catch (e) { msg("m2", "No se pudo reiniciar."); }
 };
 </script></body></html>
