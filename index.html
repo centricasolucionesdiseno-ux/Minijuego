@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>¿Quién es?</title><link rel="stylesheet" href="style.css"></head>
+<title>Quizzes</title><link rel="stylesheet" href="style.css"></head>
 <body>
 <div class="shell">
-<aside><div class="brand">¿QUIÉN ES?</div><nav><button class="ni on" id="n1">Jugar</button><button class="ni" id="n2">Ranking</button></nav></aside>
+<aside><div class="brand">QUIZZES</div><nav><button class="ni on" id="n1">Jugar</button><button class="ni" id="n2">Ranking</button></nav></aside>
 <div class="col"><header><button class="ib" id="burger" aria-label="Menú">☰</button><span class="sp"></span><button class="ib" id="tema" aria-label="Cambiar tema">◐</button><div class="usr" id="usr"></div></header>
 <main id="app"></main>
 <footer><span>© 2026 · Juego interno</span><span id="ses"></span><span><i class="dot"></i>Conectado &nbsp; <span id="fecha"></span></span></footer></div></div>
@@ -11,100 +11,116 @@
 <script type="module">
 import cfg from "./firebase-config.js";
 const B = "https://www.gstatic.com/firebasejs/10.12.0/";
-const $ = document.getElementById("app"), T = 10, NF = 4, NQ = 4; // 10 s, 4 fotos por persona, 4 preguntas por jugador
-let db, fs, conf, jugando = false;
+const $ = document.getElementById("app"), g = i => document.getElementById(i), T = 10, NF = 4, NQ = 4;
+let db, fs, conf, yo = "", jugando = false;
 const m = t => `<div class="crumb">⌂ Inicio › <b>${t}</b></div>`;
-const act = i => ["n1", "n2"].forEach(x => document.getElementById(x).classList.toggle("on", x === i));
-const nav = f => () => { if (!jugando) { document.body.classList.remove("nav"); f(); } };
-document.getElementById("n1").onclick = nav(() => inicio());
-document.getElementById("n2").onclick = nav(() => ranking());
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
 const get = async (c, d) => { const s = await fs.getDoc(fs.doc(db, c, d)); return s.exists() ? s.data() : null; };
-const fallo = m => { $.innerHTML = `<p class="err">${m}</p><button id="b">Volver</button>`; document.getElementById("b").onclick = () => inicio(); };
+const act = i => ["n1", "n2"].forEach(x => g(x).classList.toggle("on", x === i));
+const nav = f => () => { if (!jugando) { document.body.classList.remove("nav"); f(); } };
+g("n1").onclick = nav(() => inicio()); g("n2").onclick = nav(() => ranking());
+const fallo = t => { $.innerHTML = `<p class="err">${t}</p><button id="b">Volver</button>`; g("b").onclick = () => inicio(); };
+async function cargar() {
+  if (!db) { fs = await import(B + "firebase-firestore.js"); db = fs.getFirestore((await import(B + "firebase-app.js")).initializeApp(cfg)); }
+  conf = await get("publico", "config");
+}
 
 async function inicio(msg = "") {
-  act("n1"); setUser("");
-  try {
-    if (!db) { fs = await import(B + "firebase-firestore.js"); db = fs.getFirestore((await import(B + "firebase-app.js")).initializeApp(cfg)); }
-    conf = await get("publico", "config");
-  } catch (e) { return $.innerHTML = '<p class="err">No se pudo conectar. Revisa firebase-config.js.</p>'; }
-  if (!conf) return $.innerHTML = "<h1>¿Quién es?</h1><p>El juego aún no está listo. Vuelve pronto.</p>";
-  $.innerHTML = `<h1>¿Quién es?</h1>${m("Jugar")}
-  <p>Te tocan ${NQ} personas al azar. De cada una verás ${NF} fotos que ganan detalle durante ${T} segundos. No sabrás si acertaste hasta que se publique el ranking. Responde rápido: puntúas más.</p>
-  <div class="card"><label for="who">¿Quién eres?</label>
-  <select id="who"><option value="">Elige tu nombre</option>${conf.participantes.map(p => `<option>${p}</option>`).join("")}</select>
-  <p class="err">${msg}</p><button class="main" id="go">Empezar</button><button class="ghost" id="rk">Ver ranking</button></div>`;
-  document.getElementById("rk").onclick = ranking;
-  document.getElementById("go").onclick = async () => {
-    const n = document.getElementById("who").value;
-    if (!n) return inicio("Elige tu nombre primero.");
-    try { if (await get("resultados", n)) return inicio("Ya jugaste. Cada persona juega una sola vez."); }
-    catch (e) { return inicio("No se pudo verificar tu nombre."); }
-    confirmar(n);
-  };
+  act("n1");
+  try { await cargar(); } catch (e) { return $.innerHTML = '<p class="err">No se pudo conectar. Revisa firebase-config.js.</p>'; }
+  if (!conf) return $.innerHTML = "<h1>Quizzes</h1><p>El juego aún no está listo. Vuelve pronto.</p>";
+  if (yo) return menu();
+  window.setUser?.("");
+  $.innerHTML = `<h1>Bienvenido</h1>${m("Identificación")}<div class="card"><label for="who">¿Quién eres?</label>
+  <select id="who"><option value="">Elige tu nombre</option>${(conf.participantes || []).map(p => `<option>${esc(p)}</option>`).join("")}</select>
+  <p class="err">${msg}</p><button class="main" id="go">Continuar</button></div>`;
+  g("go").onclick = () => { const n = g("who").value; if (!n) return inicio("Elige tu nombre primero."); confirmar(n); };
 }
 
 function confirmar(n) {
   $.innerHTML = `<h1>Confirma tu nombre</h1>${m("Confirmación")}<div class="card">
-  <p>¿Estás seguro de que eres <b>${n}</b>?</p>
-  <p class="note">Solo puedes jugar una vez y no podrás cambiar de nombre después.</p>
+  <p>¿Estás seguro de que eres <b>${esc(n)}</b>?</p><p class="note">Cada quiz se juega una sola vez y no podrás cambiar de nombre después.</p>
   <button class="main" id="si">Sí, soy yo</button><button class="ghost" id="no">No, volver</button></div>`;
-  document.getElementById("si").onclick = () => jugar(n);
-  document.getElementById("no").onclick = () => inicio();
+  g("si").onclick = () => { yo = n; window.setUser?.(n); menu(); };
+  g("no").onclick = () => inicio();
 }
 
-function jugar(n) {
-  jugando = true; setUser(n);
-  const ps = shuffle(conf.nombres.map((_, i) => i + 1)).slice(0, NQ), resp = [];
-  const sig = () => resp.length === ps.length ? fin(n, ps, resp) : pregunta(ps[resp.length], resp.length, r => { resp.push(r); sig(); });
+async function menu(msg = "") {
+  act("n1"); jugando = false;
+  try {
+    await cargar();
+    const qs = conf.quizzes.filter(q => q.activo);
+    const hechos = await Promise.all(qs.map(q => get("resultados", q.id + ":" + yo)));
+    $.innerHTML = `<h1>Quizzes</h1>${m("Quizzes")}${msg ? `<p class="note">${msg}</p>` : ""}<div class="card">${qs.length ? qs.map((q, i) =>
+      `<div class="fila"><span><b>${esc(q.titulo)}</b><br><small>${q.tipo === "personas" ? `${NQ} personas · 4 fotos que ganan detalle` : "Preguntas generales · 10 s cada una"}</small></span>
+      ${hechos[i] ? '<span class="note">Completado</span>' : `<button class="main" data-q="${q.id}">Jugar</button>`}</div>`).join("") : "<p>No hay quizzes habilitados por ahora.</p>"}</div>
+    <button id="sal">Cambiar de persona</button>`;
+    $.querySelectorAll("[data-q]").forEach(b => b.onclick = () => empezar(qs.find(q => q.id === b.dataset.q)));
+    g("sal").onclick = () => { yo = ""; inicio(); };
+  } catch (e) { fallo("No se pudieron cargar los quizzes."); }
+}
+
+async function empezar(q) {
+  jugando = true; let qs;
+  try {
+    if (q.tipo === "personas") {
+      qs = shuffle([...Array(conf.opciones.length)].map((_, i) => i + 1)).slice(0, NQ).map(p => ({
+        fotos: [...Array(NF)].map((_, k) => `media/p${p}-${k + 1}.jpg`), texto: "¿Quién es?", opts: shuffle(conf.opciones[p - 1]), meta: { p } }));
+    } else {
+      const d = await get("publico", "quiz_" + q.id);
+      qs = d.preguntas.map((x, i) => ({ fotos: [`media/${q.id}-${i + 1}.jpg`], texto: x.t, opts: shuffle(x.o), meta: { i }, opcional: true }));
+    }
+  } catch (e) { return menu("No se pudo cargar ese quiz."); }
+  const resp = [];
+  const sig = () => resp.length === qs.length ? fin(q, resp) : pregunta(qs[resp.length], resp.length, qs.length, r => { resp.push(r); sig(); });
   sig();
 }
 
-function pregunta(p, idx, done) {
-  const fotos = [...Array(NF)].map((_, k) => `media/p${p}-${k + 1}.jpg`);
-  $.innerHTML = `<div class="top"><span>Pregunta ${idx + 1} de ${NQ}</span><span id="tm">${T}</span></div>
-  <div class="bar"><i id="fill"></i></div><div class="media"><img id="m" alt="Persona a adivinar"></div>
-  <div class="top"><span id="ft">Foto 1 de ${NF}</span></div>
-  <div class="opts card">${conf.nombres.map(o => `<button>${o}</button>`).join("")}</div>`;
-  const el = document.getElementById("m"), fill = document.getElementById("fill"), tm = document.getElementById("tm"), ft = document.getElementById("ft");
-  const btns = [...document.querySelectorAll(".opts button")];
+function pregunta(q, idx, total, done) {
+  const n = q.fotos.length;
+  $.innerHTML = `<div class="top"><span>Pregunta ${idx + 1} de ${total}</span><span id="tm">${T}</span></div><div class="bar"><i id="fill"></i></div>
+  <div class="media" id="mb"><img id="m" alt="Foto de la pregunta"></div>${n > 1 ? `<div class="top"><span id="ft">Foto 1 de ${n}</span></div>` : ""}
+  <h2 class="q">${esc(q.texto)}</h2><div class="opts card">${q.opts.map(o => `<button>${esc(o)}</button>`).join("")}</div>`;
+  const el = g("m"), fill = g("fill"), tm = g("tm"), ft = g("ft"), btns = [...$.querySelectorAll(".opts button")];
   btns.forEach(b => b.disabled = true);
-  let t0 = 0, raf = 0, fin = false, actual = -1, listas = 0;
+  let t0 = 0, raf = 0, cerrada = false, actual = -1, listas = 0;
   const cerrar = e => { // no se revela si acertó: solo se guarda lo elegido
-    if (fin) return; fin = true; cancelAnimationFrame(raf);
+    if (cerrada) return; cerrada = true; cancelAnimationFrame(raf);
     const t = e ? +Math.min(T, (performance.now() - t0) / 1000).toFixed(2) : T;
     btns.forEach(b => { b.disabled = true; if (b.textContent === e) b.style.borderColor = "var(--acc)"; });
-    setTimeout(() => done({ p, e, t }), 500);
+    setTimeout(() => done({ ...q.meta, e, t }), 500);
   };
   btns.forEach(b => b.onclick = () => cerrar(b.textContent));
   const tick = () => {
-    const t = (performance.now() - t0) / 1000, f = Math.min(NF - 1, Math.floor(t / (T / NF)));
-    if (f !== actual) { actual = f; el.src = fotos[f]; ft.textContent = `Foto ${f + 1} de ${NF}`; }
+    const t = (performance.now() - t0) / 1000, f = Math.min(n - 1, Math.floor(t / (T / n)));
+    if (f !== actual) { actual = f; el.src = q.fotos[f]; if (ft) ft.textContent = `Foto ${f + 1} de ${n}`; }
     fill.style.width = Math.max(0, 1 - t / T) * 100 + "%"; tm.textContent = Math.max(0, Math.ceil(T - t));
     if (t >= T) return cerrar(null);
     raf = requestAnimationFrame(tick);
   };
-  // el reloj arranca cuando las 4 fotos ya cargaron
-  const lista = () => { if (++listas === NF) { btns.forEach(b => b.disabled = false); t0 = performance.now(); tick(); } };
-  fotos.forEach(u => { const im = new Image(); im.onload = im.onerror = lista; im.src = u; });
+  const lista = () => { if (++listas === n) { btns.forEach(b => b.disabled = false); t0 = performance.now(); tick(); } };
+  q.fotos.forEach(u => { const im = new Image(); im.onload = lista; im.onerror = () => { if (q.opcional) g("mb").hidden = true; lista(); }; im.src = u; });
 }
 
-async function fin(n, ps, resp) {
+async function fin(q, resp) {
   $.innerHTML = "<p>Guardando…</p>";
-  try { await fs.setDoc(fs.doc(db, "resultados", n), { ps, resp, fecha: Date.now() }); }
-  catch (e) { $.innerHTML = '<p class="err">No se pudo guardar.</p><button id="r">Reintentar</button>'; return document.getElementById("r").onclick = () => fin(n, ps, resp); }
-  jugando = false;
-  $.innerHTML = `<h1>¡Listo!</h1>${m("Resultado")}<div class="card"><p>Tus respuestas quedaron guardadas. El ranking aparecerá cuando el organizador lo publique.</p><button class="main" id="rk">Ver ranking</button></div>`;
-  document.getElementById("rk").onclick = ranking;
+  try { await fs.setDoc(fs.doc(db, "resultados", q.id + ":" + yo), { quiz: q.id, name: yo, resp, fecha: Date.now() }); }
+  catch (e) { $.innerHTML = '<p class="err">No se pudo guardar.</p><button id="r">Reintentar</button>'; return g("r").onclick = () => fin(q, resp); }
+  menu("¡Listo! Tus respuestas quedaron guardadas. El ranking aparece cuando el organizador lo publique.");
 }
 
-async function ranking() {
-  let r; try { r = await get("publico", "ranking"); } catch (e) { return fallo("No se pudo cargar el ranking."); }
+async function ranking(id) {
   act("n2");
-  $.innerHTML = `<h1>Ranking</h1>${m("Ranking")}<div class="card tbl">${r ? `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
-  ${r.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${x.n}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>
-  <p class="note">Puntúa más quien acierta y responde más rápido; el empate se rompe por menor tiempo total.</p>` : "<p>Aún no hay ranking publicado.</p>"}</div><button id="b">Volver</button>`;
-  document.getElementById("b").onclick = () => inicio();
+  try { await cargar(); } catch (e) { return fallo("No se pudo cargar el ranking."); }
+  const qs = conf?.quizzes || []; if (!qs.length) return fallo("Aún no hay quizzes.");
+  id = id || qs[0].id; let r;
+  try { r = await get("publico", "ranking_" + id); } catch (e) { return fallo("No se pudo cargar el ranking."); }
+  $.innerHTML = `<h1>Ranking</h1>${m("Ranking")}<div class="tabs">${qs.map(x => `<button class="${x.id === id ? "main" : ""}" data-q="${x.id}">${esc(x.titulo)}</button>`).join("")}</div>
+  <div class="card tbl">${r ? `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
+  ${r.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.n)}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>
+  <p class="note">Puntúa más quien acierta y responde más rápido; el empate se rompe por menor tiempo total.</p>` : "<p>Aún no hay ranking publicado para este quiz.</p>"}</div>`;
+  $.querySelectorAll("[data-q]").forEach(b => b.onclick = () => ranking(b.dataset.q));
 }
-inicio();
+inicio().catch(e => { $.innerHTML = `<p class="err">Error al cargar: ${e.message}</p>`; });
 </script></body></html>
