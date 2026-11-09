@@ -66,7 +66,7 @@ async function empezar(q) {
   try {
     if (q.tipo === "personas") {
       qs = shuffle([...Array(conf.opciones.length)].map((_, i) => i + 1)).slice(0, NQ).map(p => ({
-        fotos: [...Array(NF)].map((_, k) => `media/p${p}-${k + 1}.jpg`), texto: "¿Quién es?", opts: shuffle(conf.opciones[p - 1]), meta: { p } }));
+        fotos: [...Array(NF)].map((_, k) => `media/p${p}-${k + 1}.jpg`), texto: "¿Quién es?", opts: shuffle(conf.opciones[p - 1].o), meta: { p } }));
     } else {
       const d = await get("publico", "quiz_" + q.id);
       qs = d.preguntas.map((x, i) => ({ fotos: [`media/${q.id}-${i + 1}.jpg`], texto: x.t, opts: shuffle(x.o), meta: { i }, opcional: true }));
