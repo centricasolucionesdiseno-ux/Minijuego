@@ -116,7 +116,7 @@ async function ranking(id) {
   const qs = conf?.quizzes || []; if (!qs.length) return fallo("Aún no hay quizzes.");
   id = id || qs[0].id; let r;
   try { r = await get("publico", "ranking_" + id); } catch (e) { return fallo("No se pudo cargar el ranking."); }
-  $.innerHTML = `<h1>Ranking</h1>${m("Ranking")}<div class="tabs">${qs.map(x => `<button class="${x.id === id ? "main" : ""}" data-q="${x.id}">${esc(x.titulo)}</button>`).join("")}</div>
+  $.innerHTML = `<h1>Ranking</h1>${m("Ranking")}<div class="tabs">${[...qs, { id: "general", titulo: "General (suma de todos)" }].map(x => `<button class="${x.id === id ? "main" : ""}" data-q="${x.id}">${esc(x.titulo)}</button>`).join("")}</div>
   <div class="card tbl">${r ? `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
   ${r.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.n)}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>
   <p class="note">Puntúa más quien acierta y responde más rápido; el empate se rompe por menor tiempo total.</p>` : "<p>Aún no hay ranking publicado para este quiz.</p>"}</div>`;
