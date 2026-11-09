@@ -82,7 +82,7 @@ $("pubP").onclick = async () => {
   const ins = lines("ins"), pn = lines("pn"), pool = [...new Set([...ins, ...pn])];
   if (pn.length < 4 || pool.length < 4) return msg("m1", "Escribe al menos 4 nombres para P1, P2… y 4 personas en total.");
   // Cada foto: nombre correcto + 3 al azar de todas las personas, ordenados A-Z para no delatar cuál es.
-  const opciones = pn.map(c => [c, ...shuffle(pool.filter(x => x !== c)).slice(0, 3)].sort((a, b) => a.localeCompare(b, "es")));
+  const opciones = pn.map(c => [c, ...shuffle(pool.filter(x => x !== c)).slice(0, 3)].sort((a, b) => a.localeCompare(b, "es"))).map(o => ({ o })); // Firestore no admite listas dentro de listas
   try {
     poner("personas");
     await fs.setDoc(ref("claves", "personas"), { pn });
