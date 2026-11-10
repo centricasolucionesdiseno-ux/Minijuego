@@ -24,6 +24,8 @@
 <button class="ghost" id="rst">Reiniciar este quiz (borra resultados y ranking)</button><p class="note" id="m2"></p></div>
 <div class="card"><h2>Bonos (se suman al ranking general)</h2><p class="note">Hasta 5 personas, entre 10 y 50 puntos cada una. Después de guardar, recalcula y publica el ranking general.</p>
 <div id="bon"></div><button class="main" id="bsave">Guardar bonos</button><p class="note" id="m3"></p></div>
+<div class="card"><h2>Nombres de las fotos de la tier list</h2><p class="note">Una por línea, en el orden de tier-1 a tier-15. Solo se usan para publicar resultados con nombres; nunca se publican las fotos.</p>
+<textarea id="fn" rows="15"></textarea><button class="main" id="fsave">Guardar nombres</button><p class="note" id="m5"></p></div>
 <div class="card"><h2>Podio final (Resultados de votación)</h2><p class="note">1.º: mayor puntaje general de minijuegos, con bonos (premio: Bono). 2.º: mejor foto de la tier list (Tarde de desconexión). 3.º: la persona que elijas (Lunes de llegar tarde).</p>
 <label for="p3">Persona del 3.er puesto</label><select id="p3"></select>
 <button class="main" id="pod">Calcular y publicar podio</button><p class="note" id="m4"></p></div>
@@ -79,6 +81,7 @@ async function cargar() {
   try {
     const c = await get("publico", "config"); if (c) { if (c.quizzes) Q = c.quizzes; if (c.act) A = { ...A, ...c.act }; $("ins").value = (c.participantes || []).join("\n"); if (c.bonos) BN = c.bonos; }
     const po = await get("publico", "podio"); poblar(po?.tercero);
+    const kt = await get("claves", "tier"); if (kt) $("fn").value = kt.nombres.join("\n");
     const kp = await get("claves", "personas"); if (kp) $("pn").value = kp.pn.join("\n");
     for (const id of ["q1", "q2"]) { const k = await get("claves", id); if (k) $("tx-" + id).value = k.txt || ""; }
   } catch (e) { msg("m0", "No se pudo leer la configuración (¿reglas de Firestore actualizadas?)."); }
@@ -121,23 +124,31 @@ document.querySelectorAll("[data-pub]").forEach(b => b.onclick = async () => {
 });
 
 const puntuar = (r, K) => { let a = 0, t = 0, p = 0; r.resp.forEach(x => { t += x.t; if (x.e === (r.quiz === "personas" ? K.pn[x.p - 1] : K.c[x.i])) { a++; p += Math.round(100 + 900 * (1 - x.t / T)); } }); return { a, t, p, n: r.resp.length }; };
+const DEF = ["Carlos Torres", "Edward Macias", "Ivan Delgado", "Kevin A", "Mauricio Quiroz", "Alejandra Sanchez", "Andrea Guerrero", "Brahian Cortes", "Edwin Gutierrez", "Eramis Olivero", "Isabela Garcia", "Juan Hurtado", "Santiago Calle", "Tatiana Ruiz", "Vanessa Luna"];
+$("fn").value = DEF.join("\n");
+const nombresFoto = () => { const l = lines("fn"); return l.length === 15 ? l : null; };
+$("fsave").onclick = async () => {
+  const l = nombresFoto(); if (!l) return msg("m5", "Escribe exactamente 15 nombres, uno por línea, en el orden de las fotos.");
+  try { await fs.setDoc(ref("claves", "tier"), { nombres: l }); msg("m5", "Guardado."); } catch (e) { msg("m5", "Error al guardar" + err(e)); }
+};
 const rdoc = id => (id === "tier" || id === "votos" ? "res_" : "ranking_") + id;
 const tabla = (cab, rows) => `<table><tr>${cab.map((c, i) => `<th${i > 1 ? ' class="n"' : ""}>${c}</th>`).join("")}</tr>${rows.map(r => `<tr>${r.map((c, i) => `<td${i > 1 ? ' class="n"' : ""}>${c}</td>`).join("")}</tr>`).join("")}</table>`;
 async function extra(id) {
+  const NM = nombresFoto();
   const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id))), docs = [];
   s.forEach(d => docs.push(d.data()));
   let html;
   if (id === "tier") { // estilo Balón de Oro: 15 puntos al 1.º … 1 punto al 15.º
-    const acc = {}; for (let i = 1; i <= 15; i++) acc[i] = { foto: i, puntos: 0, primeros: 0 };
+    const acc = {}; for (let i = 1; i <= 15; i++) acc[i] = { n: NM[i - 1], puntos: 0, primeros: 0 };
     docs.forEach(r => r.orden.forEach((f, k) => { if (acc[f]) { acc[f].puntos += 15 - k; if (!k) acc[f].primeros++; } }));
     const f = Object.values(acc).sort((a, b) => b.puntos - a.puntos || b.primeros - a.primeros);
     pub = { filas: f, votantes: docs.length };
-    html = tabla(["#", "Foto", "Puntos", "1.º lugares"], f.map((x, i) => [i + 1, "Foto " + x.foto, x.puntos, x.primeros]));
+    html = tabla(["#", "Persona", "Puntos", "1.º lugares"], f.map((x, i) => [i + 1, x.n, x.puntos, x.primeros]));
   } else { // votos por categoría
     const cats = CATS.map(([k, t]) => { const c = {}; docs.forEach(r => { const f = r.votos?.[k]; if (f) c[f] = (c[f] || 0) + 1; });
-      return { id: k, titulo: t, filas: Object.entries(c).map(([f, n]) => ({ foto: +f, votos: n })).sort((a, b) => b.votos - a.votos) }; });
+      return { id: k, titulo: t, filas: Object.entries(c).map(([f, k]) => ({ n: NM[f - 1], votos: k })).sort((a, b) => b.votos - a.votos) }; });
     pub = { cats, votantes: docs.length };
-    html = cats.map(c => `<h2>${c.titulo}</h2>` + (c.filas.length ? tabla(["#", "Foto", "Votos"], c.filas.map((x, i) => [i + 1, "Foto " + x.foto, x.votos])) : "<p>Sin votos.</p>")).join("");
+    html = cats.map(c => `<h2>${c.titulo}</h2>` + (c.filas.length ? tabla(["#", "Persona", "Votos"], c.filas.map((x, i) => [i + 1, x.n, x.votos])) : "<p>Sin votos.</p>")).join("");
   }
   $("out").className = "tbl card"; $("out").innerHTML = html;
   $("rk").hidden = !docs.length; msg("m2", `${docs.length} personas participaron.`);
@@ -164,7 +175,7 @@ async function mejorFoto() {
 $("calc").onclick = async () => {
   const id = $("qsel").value;
   try {
-    if (id === "tier" || id === "votos") return await extra(id);
+    if (id === "tier" || id === "votos") { if (!nombresFoto()) return msg("m2", "Escribe los 15 nombres de las fotos (tarjeta \"Nombres de las fotos\")."); return await extra(id); }
     filas = await filasDe(id); if (!filas) return msg("m2", "Ese quiz aún no está publicado.");
     $("out").className = "tbl card";
     $("out").innerHTML = `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
@@ -187,12 +198,13 @@ $("bsave").onclick = async () => {
 };
 $("pod").onclick = async () => {
   try {
-    const f = await filasDe("general"), foto = await mejorFoto(), t = $("p3").value;
+    const f = await filasDe("general"), foto = await mejorFoto(), t = $("p3").value, NM = nombresFoto();
+    if (!NM) return msg("m4", "Escribe los 15 nombres de las fotos.");
     if (!f || !f.length) return msg("m4", "Aún no hay resultados de minijuegos.");
     if (!foto) return msg("m4", "Aún no hay tier lists enviadas.");
     if (!t) return msg("m4", "Elige la persona del 3.er puesto.");
-    await fs.setDoc(ref("publico", "podio"), { primero: f[0].n, segundo: foto, tercero: t, fecha: Date.now() });
-    msg("m4", `Publicado: 1.º ${f[0].n} · 2.º Foto ${foto} · 3.º ${t}.`);
+    await fs.setDoc(ref("publico", "podio"), { primero: f[0].n, segundo: NM[foto - 1], tercero: t, fecha: Date.now() });
+    msg("m4", `Publicado: 1.º ${f[0].n} · 2.º ${NM[foto - 1]} · 3.º ${t}.`);
   } catch (e) { msg("m4", "Error al publicar" + err(e)); }
 };
 $("rk").onclick = async () => {
