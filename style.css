@@ -59,3 +59,28 @@ tr:nth-child(even):not(:first-child){background:var(--row)}
 .chk{display:flex;align-items:center;margin:6px 0}
 input[type=checkbox]{width:auto;margin:0 10px 0 0}
 .q{margin:16px 0 0}
+/* logo, Nebulina y menú lateral */
+aside{display:flex;flex-direction:column}
+.lg{display:block;max-width:100%;max-height:44px}
+.lg-o{display:none}
+[data-tema=oscuro] .lg-c{display:none}
+[data-tema=oscuro] .lg-o{display:block}
+.neb{align-self:center;width:100%;max-width:200px;margin-top:auto;padding:16px}
+@media(min-width:761px){aside{position:sticky;top:0;height:100vh}}
+/* tier list y votación */
+.rk{width:34px;font-weight:700}
+.it{flex:1;display:flex;align-items:center;gap:8px}
+.mini{width:64px;height:48px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:6px}
+.it .mini{margin:0}
+.acc{display:flex;gap:6px}
+.acc button{padding:8px 10px}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.th{padding:0;overflow:hidden;border:2px solid var(--line);background:var(--card);color:var(--ink);text-align:center}
+.th img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover}
+.th span{display:block;padding:6px}
+.th.sel{border-color:var(--acc)}
+.th.sel span{background:var(--acc);color:#fff}
+dialog{width:min(92vw,720px);padding:16px;border:0;border-radius:12px;background:var(--card);color:var(--ink)}
+dialog img{display:block;width:100%;max-height:65vh;object-fit:contain;border-radius:8px}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.tbl h2{margin:0;padding:14px 16px 6px}
