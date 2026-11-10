@@ -110,10 +110,56 @@ async function fin(q, resp) {
   menu("¡Listo! Tus respuestas quedaron guardadas. El ranking aparece cuando el organizador lo publique.");
 }
 
-const podio = r => !r ? '<div class="card"><p>Aún no se han publicado los resultados de la votación.</p></div>' : `<div class="podio">
-  <div class="pl p2"><div class="who"><img class="pfoto" src="${foto(r.segundo)}" alt="Foto ${r.segundo}"><b>Foto ${r.segundo}</b><small>Mejor foto de la tier list</small></div><div class="blk">2</div><div class="prem">Tarde de desconexión</div></div>
-  <div class="pl p1"><div class="who"><b>${esc(r.primero)}</b><small>Más puntos en los minijuegos</small></div><div class="blk">1</div><div class="prem">Bono</div></div>
-  <div class="pl p3"><div class="who"><b>${esc(r.tercero)}</b><small>Elegido por el organizador</small></div><div class="blk">3</div><div class="prem">Lunes de llegar tarde</div></div></div>`;
+const PREM = { 3: "Lunes de llegar tarde", 2: "Tarde de desconexión", 1: "Bono" };
+const DESC = { 3: "Elegido por el organizador", 2: "Mejor foto de la tier list", 1: "Más puntos en los minijuegos" };
+const nm = x => typeof x === "number" ? "Foto " + x : x;
+const podio = r => !r ? '<div class="card"><p>Aún no se han publicado los resultados de la votación.</p></div>' : `<div class="stage" id="stage"><canvas id="cv"></canvas>
+  <div class="ptop"><button class="main" id="rv">Revelar 3.er lugar</button><button id="snd">Sonido: sí</button><button id="fs">Pantalla completa</button><button id="rs">Reiniciar</button></div>
+  <div class="podio" aria-live="polite">${[2, 1, 3].map(p => `<div class="pl p${p}" id="pl${p}"><div class="who"><b>¿?</b><small>&nbsp;</small></div><div class="blk">${p}</div><div class="prem">${PREM[p]}</div></div>`).join("")}</div>
+  <div class="cd" id="cd" hidden></div></div>`;
+
+function iniciarPodio(r) {
+  const nombres = { 1: nm(r.primero), 2: nm(r.segundo), 3: nm(r.tercero) };
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let pos = 3, sonido = true, ocupado = false, ctx;
+  const bip = (f, d, tipo, vol, at = 0) => { // sonidos sintetizados en el navegador, sin archivos
+    if (!sonido) return; ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), gn = ctx.createGain(), t = ctx.currentTime + at;
+    o.type = tipo; o.frequency.value = f; gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(.001, t + d);
+    o.connect(gn).connect(ctx.destination); o.start(t); o.stop(t + d);
+  };
+  const fanfarria = grande => [523, 659, 784, ...(grande ? [1047, 1319] : [])].forEach((f, i) => bip(f, .4, "triangle", .18, i * .12));
+  const confeti = n => {
+    const cv = g("cv"), c = cv.getContext("2d"), col = ["#ffd54a", "#4fc3f7", "#f06292", "#81c784", "#ffffff"];
+    cv.width = cv.offsetWidth; cv.height = cv.offsetHeight;
+    const ps = [...Array(n)].map(() => ({ x: cv.width / 2, y: cv.height * .55, vx: (Math.random() - .5) * 14, vy: -Math.random() * 14 - 4, s: 4 + Math.random() * 5, c: col[Math.random() * 5 | 0], a: Math.random() * 6, va: (Math.random() - .5) * .4 }));
+    let f = 0;
+    const paso = () => {
+      c.clearRect(0, 0, cv.width, cv.height);
+      ps.forEach(p => { p.vy += .35; p.x += p.vx; p.y += p.vy; p.a += p.va; c.save(); c.translate(p.x, p.y); c.rotate(p.a); c.fillStyle = p.c; c.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * .6); c.restore(); });
+      if (++f < 150) requestAnimationFrame(paso); else c.clearRect(0, 0, cv.width, cv.height);
+    };
+    paso();
+  };
+  const revelar = async () => {
+    if (ocupado || !pos) return; ocupado = true; g("rv").disabled = true;
+    if (!reduce) { // cuenta regresiva antes de cada nombre
+      const cd = g("cd"); cd.hidden = false;
+      for (const n of [3, 2, 1]) { cd.textContent = n; bip(n === 1 ? 660 : 440, .15, "square", .08); await new Promise(ok => setTimeout(ok, 800)); }
+      cd.hidden = true;
+    }
+    const pl = g("pl" + pos); pl.classList.add("on");
+    pl.querySelector("b").textContent = nombres[pos]; pl.querySelector("small").textContent = DESC[pos];
+    fanfarria(pos === 1); if (!reduce) confeti(pos === 1 ? 240 : 90);
+    pos--; ocupado = false;
+    g("rv").textContent = pos ? `Revelar ${pos === 2 ? "2.º" : "1.er"} lugar` : "¡Felicitaciones!";
+    g("rv").disabled = !pos;
+  };
+  g("rv").onclick = revelar;
+  g("snd").onclick = () => { sonido = !sonido; g("snd").textContent = "Sonido: " + (sonido ? "sí" : "no"); };
+  g("fs").hidden = !document.fullscreenEnabled; g("fs").onclick = () => g("stage").requestFullscreen?.();
+  g("rs").onclick = () => ranking("podio");
+}
 
 async function ranking(id) {
   act("n2");
@@ -127,6 +173,7 @@ async function ranking(id) {
   <p class="note">Puntúa más quien acierta y responde más rápido; el empate se rompe por menor tiempo total.</p>` : "<p>Aún no hay ranking publicado para este quiz.</p>"}</div>`;
   $.innerHTML = `<h1>Ranking</h1>${m("Ranking")}<div class="tabs">${tabs.map(x => `<button class="${x.id === id ? "main" : ""}" data-q="${x.id}">${esc(x.titulo)}</button>`).join("")}</div>${cuerpo}`;
   $.querySelectorAll("[data-q]").forEach(b => b.onclick = () => ranking(b.dataset.q));
+  if (id === "podio" && r) iniciarPodio(r);
 }
 
 const CATS = [["jungla", "Jungla Zen"], ["copiloto", "Copiloto Estrella"], ["setup", "Setup Ergonómico"], ["rincon", "Rincón Creativo"]];
@@ -139,9 +186,9 @@ async function estado(tipo) {
   const [hecho, res] = await Promise.all([get("resultados", tipo + ":" + yo), get("publico", "res_" + tipo)]);
   return { on: !!(conf.act || {})[tipo], hecho, res };
 }
-const tablaTier = r => `<table><tr><th>#</th><th>Foto</th><th class="n">Puntos</th><th class="n">1.º lugares</th></tr>${r.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${mini(x.foto)}</td><td class="n">${x.puntos}</td><td class="n">${x.primeros}</td></tr>`).join("")}</table>
+const tablaTier = r => `<table><tr><th>#</th><th>Persona</th><th class="n">Puntos</th><th class="n">1.º lugares</th></tr>${r.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.n ?? "Foto " + x.foto)}</td><td class="n">${x.puntos}</td><td class="n">${x.primeros}</td></tr>`).join("")}</table>
   <p class="note">Cada tier list reparte de ${N} puntos (1.º) a 1 punto (${N}.º). Gana la foto con más puntos. Votantes: ${r.votantes}.</p>`;
-const tablaVotos = r => r.cats.map(c => `<h2>${c.titulo}</h2><div class="card tbl">${c.filas.length ? `<table><tr><th>#</th><th>Foto</th><th class="n">Votos</th></tr>${c.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${mini(x.foto)}</td><td class="n">${x.votos}</td></tr>`).join("")}</table>` : "<p>Sin votos.</p>"}</div>`).join("") + `<p class="note">Votantes: ${r.votantes}.</p>`;
+const tablaVotos = r => r.cats.map(c => `<h2>${c.titulo}</h2><div class="card tbl">${c.filas.length ? `<table><tr><th>#</th><th>Persona</th><th class="n">Votos</th></tr>${c.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.n ?? "Foto " + x.foto)}</td><td class="n">${x.votos}</td></tr>`).join("")}</table>` : "<p>Sin votos.</p>"}</div>`).join("") + `<p class="note">Votantes: ${r.votantes}.</p>`;
 
 async function tier() {
   act("n3"); let s;
