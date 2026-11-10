@@ -22,6 +22,11 @@
 <button class="main" id="calc">Calcular ranking</button><div id="out"></div>
 <button class="ghost" id="rk" hidden>Publicar ranking a los jugadores</button>
 <button class="ghost" id="rst">Reiniciar este quiz (borra resultados y ranking)</button><p class="note" id="m2"></p></div>
+<div class="card"><h2>Bonos (se suman al ranking general)</h2><p class="note">Hasta 5 personas, entre 10 y 50 puntos cada una. Después de guardar, recalcula y publica el ranking general.</p>
+<div id="bon"></div><button class="main" id="bsave">Guardar bonos</button><p class="note" id="m3"></p></div>
+<div class="card"><h2>Podio final (Resultados de votación)</h2><p class="note">1.º: mayor puntaje general de minijuegos, con bonos (premio: Bono). 2.º: mejor foto de la tier list (Tarde de desconexión). 3.º: la persona que elijas (Lunes de llegar tarde).</p>
+<label for="p3">Persona del 3.er puesto</label><select id="p3"></select>
+<button class="main" id="pod">Calcular y publicar podio</button><p class="note" id="m4"></p></div>
 </div></main>
 <footer><span>© 2026 · Juego interno</span><span id="ses"></span><span><i class="dot"></i>Conectado &nbsp; <span id="fecha"></span></span></footer></div></div>
 <script src="ui.js"></script>
@@ -46,7 +51,7 @@ const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).
 const err = e => " (" + (e.code || e.message) + ")" + (e.code === "permission-denied" ? ": actualiza las reglas de Firestore (falta la colección claves)" : "");
 const T = 10, T0 = [{ id: "personas", titulo: "¿Quién es?", tipo: "personas", activo: false }, { id: "q1", titulo: "Quiz general 1", tipo: "general", activo: false }, { id: "q2", titulo: "Quiz general 2", tipo: "general", activo: false }];
 const CATS = [["jungla", "Jungla Zen"], ["copiloto", "Copiloto Estrella"], ["setup", "Setup Ergonómico"], ["rincon", "Rincón Creativo"]];
-let Q = T0.map(x => ({ ...x })), filas = [], A = { tier: false, votos: false }, pub = {};
+let Q = T0.map(x => ({ ...x })), filas = [], A = { tier: false, votos: false }, pub = {}, BN = [];
 const guardarQ = () => fs.setDoc(ref("publico", "config"), { quizzes: Q, act: A }, { merge: true });
 const poner = id => { const q = Q.find(x => x.id === id); q.titulo = $("ti-" + id).value.trim() || q.titulo; };
 
@@ -64,9 +69,16 @@ function pintar() {
   $("qsel").innerHTML = Q.map(q => `<option value="${q.id}">${q.titulo}</option>`).join("") + '<option value="general">General (suma de minijuegos)</option><option value="tier">Tier list</option><option value="votos">Votación por categorías</option>';
   Q.forEach(q => $("ti-" + q.id).value = q.titulo);
 }
+function poblar(t3) {
+  const op = '<option value="">— elegir —</option>' + lines("ins").map(p => `<option>${p}</option>`).join("");
+  $("bon").innerHTML = [0, 1, 2, 3, 4].map(i => `<div class="fila"><select id="bn${i}" aria-label="Persona ${i + 1}">${op}</select><input id="bp${i}" type="number" min="10" max="50" step="1" placeholder="Puntos (10 a 50)" aria-label="Puntos"></div>`).join("");
+  BN.slice(0, 5).forEach((b, i) => { $("bn" + i).value = b.n; $("bp" + i).value = b.p; });
+  $("p3").innerHTML = op; if (t3) $("p3").value = t3;
+}
 async function cargar() {
   try {
-    const c = await get("publico", "config"); if (c) { if (c.quizzes) Q = c.quizzes; if (c.act) A = { ...A, ...c.act }; $("ins").value = (c.participantes || []).join("\n"); }
+    const c = await get("publico", "config"); if (c) { if (c.quizzes) Q = c.quizzes; if (c.act) A = { ...A, ...c.act }; $("ins").value = (c.participantes || []).join("\n"); if (c.bonos) BN = c.bonos; }
+    const po = await get("publico", "podio"); poblar(po?.tercero);
     const kp = await get("claves", "personas"); if (kp) $("pn").value = kp.pn.join("\n");
     for (const id of ["q1", "q2"]) { const k = await get("claves", id); if (k) $("tx-" + id).value = k.txt || ""; }
   } catch (e) { msg("m0", "No se pudo leer la configuración (¿reglas de Firestore actualizadas?)."); }
@@ -89,7 +101,7 @@ $("pubP").onclick = async () => {
     poner("personas");
     await fs.setDoc(ref("claves", "personas"), { pn });
     await fs.setDoc(ref("publico", "config"), { participantes: ins, opciones, quizzes: Q }, { merge: true });
-    msg("m1", "Publicado."); pintar();
+    msg("m1", "Publicado."); pintar(); poblar($("p3").value);
   } catch (e) { msg("m1", "Error al publicar" + err(e)); }
 };
 
@@ -130,26 +142,58 @@ async function extra(id) {
   $("out").className = "tbl card"; $("out").innerHTML = html;
   $("rk").hidden = !docs.length; msg("m2", `${docs.length} personas participaron.`);
 }
+async function filasDe(id) { // ranking de un quiz o el general (con bonos); null si aún no está publicado
+  const K = {};
+  for (const q of Q) if (id === "general" || q.id === id) { const k = await get("claves", q.id); if (k) K[q.id] = k; }
+  if (!Object.keys(K).length) return null;
+  const s = await fs.getDocs(id === "general" ? fs.collection(db, "resultados") : fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id)));
+  const acc = {}, nuevo = n => acc[n] ||= { n, aciertos: 0, total: 0, tiempo: 0, puntos: 0 };
+  s.forEach(d => {
+    const r = d.data(); if (!K[r.quiz]) return;
+    const u = puntuar(r, K[r.quiz]), o = nuevo(r.name);
+    o.aciertos += u.a; o.total += u.n; o.tiempo += u.t; o.puntos += u.p;
+  });
+  if (id === "general") BN.forEach(b => { const o = nuevo(b.n); o.puntos += b.p; o.bono = b.p; });
+  return Object.values(acc).map(o => ({ ...o, tiempo: +o.tiempo.toFixed(2) })).sort((a, b) => b.puntos - a.puntos || a.tiempo - b.tiempo);
+}
+async function mejorFoto() {
+  const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", "tier"))), acc = {};
+  s.forEach(d => d.data().orden.forEach((f, k) => { const o = acc[f] ||= { f, p: 0, a: 0 }; o.p += 15 - k; if (!k) o.a++; }));
+  return Object.values(acc).sort((a, b) => b.p - a.p || b.a - a.a)[0]?.f ?? null;
+}
 $("calc").onclick = async () => {
   const id = $("qsel").value;
   try {
     if (id === "tier" || id === "votos") return await extra(id);
-    const K = {};
-    for (const q of Q) if (id === "general" || q.id === id) { const k = await get("claves", q.id); if (k) K[q.id] = k; }
-    if (!Object.keys(K).length) return msg("m2", "Ese quiz aún no está publicado.");
-    const s = await fs.getDocs(id === "general" ? fs.collection(db, "resultados") : fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id)));
-    const acc = {};
-    s.forEach(d => {
-      const r = d.data(); if (!K[r.quiz]) return;
-      const u = puntuar(r, K[r.quiz]), o = acc[r.name] ||= { n: r.name, aciertos: 0, total: 0, tiempo: 0, puntos: 0 };
-      o.aciertos += u.a; o.total += u.n; o.tiempo += u.t; o.puntos += u.p;
-    });
-    filas = Object.values(acc).map(o => ({ ...o, tiempo: +o.tiempo.toFixed(2) })).sort((a, b) => b.puntos - a.puntos || a.tiempo - b.tiempo);
+    filas = await filasDe(id); if (!filas) return msg("m2", "Ese quiz aún no está publicado.");
     $("out").className = "tbl card";
     $("out").innerHTML = `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
-    ${filas.map((x, i) => `<tr><td>${i + 1}</td><td>${x.n}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>`;
+    ${filas.map((x, i) => `<tr><td>${i + 1}</td><td>${x.n}${x.bono ? ` <small>(incluye bono +${x.bono})</small>` : ""}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>`;
     pub = { filas }; $("rk").hidden = !filas.length; msg("m2", `${filas.length} personas en el ranking.`);
   } catch (e) { msg("m2", "No se pudieron leer los resultados" + err(e)); }
+};
+$("bsave").onclick = async () => {
+  const lista = [];
+  for (let i = 0; i < 5; i++) {
+    const n = $("bn" + i).value, raw = $("bp" + i).value, p = Number(raw);
+    if (!n && !raw) continue;
+    if (!n) return msg("m3", `Fila ${i + 1}: elige la persona.`);
+    if (!Number.isInteger(p) || p < 10 || p > 50) return msg("m3", `Fila ${i + 1}: los puntos deben ser un número entero entre 10 y 50.`);
+    if (lista.some(x => x.n === n)) return msg("m3", `${n} está repetida.`);
+    lista.push({ n, p });
+  }
+  try { await fs.setDoc(ref("publico", "config"), { bonos: lista }, { merge: true }); BN = lista; msg("m3", `Guardado (${lista.length} bonos). Recalcula y publica el ranking general para que se refleje.`); }
+  catch (e) { msg("m3", "Error al guardar" + err(e)); }
+};
+$("pod").onclick = async () => {
+  try {
+    const f = await filasDe("general"), foto = await mejorFoto(), t = $("p3").value;
+    if (!f || !f.length) return msg("m4", "Aún no hay resultados de minijuegos.");
+    if (!foto) return msg("m4", "Aún no hay tier lists enviadas.");
+    if (!t) return msg("m4", "Elige la persona del 3.er puesto.");
+    await fs.setDoc(ref("publico", "podio"), { primero: f[0].n, segundo: foto, tercero: t, fecha: Date.now() });
+    msg("m4", `Publicado: 1.º ${f[0].n} · 2.º Foto ${foto} · 3.º ${t}.`);
+  } catch (e) { msg("m4", "Error al publicar" + err(e)); }
 };
 $("rk").onclick = async () => {
   try { await fs.setDoc(ref("publico", rdoc($("qsel").value)), { ...pub, fecha: Date.now() }); msg("m2", "Ranking publicado."); }
