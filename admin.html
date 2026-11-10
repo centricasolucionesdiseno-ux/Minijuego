@@ -3,7 +3,7 @@
 <title>Panel del organizador</title><link rel="stylesheet" href="style.css"></head>
 <body>
 <div class="shell">
-<aside><div class="brand">QUIZZES</div><nav><a class="ni" href="index.html">Jugar</a><a class="ni on" href="admin.html">Organizador</a></nav></aside>
+<aside><div class="brand"><img class="lg lg-c" src="media/logo-claro.png" alt="Logo" onload="this.parentNode.querySelector('.bt').hidden=true" onerror="this.remove()"><img class="lg lg-o" src="media/logo-oscuro.png" alt="" onload="this.parentNode.querySelector('.bt').hidden=true" onerror="this.remove()"><span class="bt">QUIZZES</span></div><nav><a class="ni" href="index.html">Jugar</a><a class="ni on" href="admin.html">Organizador</a></nav><img class="neb" src="media/nebulina.png" alt="Nebulina" onerror="this.remove()"></aside>
 <div class="col"><header><button class="ib" id="burger" aria-label="Menú">☰</button><span class="sp"></span><button class="ib" id="tema" aria-label="Cambiar tema">◐</button><div class="usr" id="usr"></div></header>
 <main>
 <h1>Panel del organizador</h1><div class="crumb">⌂ Inicio › <b>Configuración y resultados</b></div>
@@ -45,8 +45,9 @@ const get = async (c, d) => { const s = await fs.getDoc(ref(c, d)); return s.exi
 const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
 const err = e => " (" + (e.code || e.message) + ")" + (e.code === "permission-denied" ? ": actualiza las reglas de Firestore (falta la colección claves)" : "");
 const T = 10, T0 = [{ id: "personas", titulo: "¿Quién es?", tipo: "personas", activo: false }, { id: "q1", titulo: "Quiz general 1", tipo: "general", activo: false }, { id: "q2", titulo: "Quiz general 2", tipo: "general", activo: false }];
-let Q = T0.map(x => ({ ...x })), filas = [];
-const guardarQ = () => fs.setDoc(ref("publico", "config"), { quizzes: Q }, { merge: true });
+const CATS = [["jungla", "Jungla Zen"], ["copiloto", "Copiloto Estrella"], ["setup", "Setup Ergonómico"], ["rincon", "Rincón Creativo"]];
+let Q = T0.map(x => ({ ...x })), filas = [], A = { tier: false, votos: false }, pub = {};
+const guardarQ = () => fs.setDoc(ref("publico", "config"), { quizzes: Q, act: A }, { merge: true });
 const poner = id => { const q = Q.find(x => x.id === id); q.titulo = $("ti-" + id).value.trim() || q.titulo; };
 
 $("gen").innerHTML = ["q1", "q2"].map((id, i) => `<div class="card"><h2>Quiz general ${i + 1}</h2>
@@ -54,17 +55,18 @@ $("gen").innerHTML = ["q1", "q2"].map((id, i) => `<div class="card"><h2>Quiz gen
 <button class="main" data-pub="${id}">Publicar quiz ${i + 1}</button><p class="note" id="m-${id}"></p></div>`).join("");
 
 function pintar() {
-  $("tog").innerHTML = Q.map(q => `<label class="chk"><input type="checkbox" data-id="${q.id}" ${q.activo ? "checked" : ""}>${q.titulo}</label>`).join("");
+  $("tog").innerHTML = Q.map(q => `<label class="chk"><input type="checkbox" data-id="${q.id}" ${q.activo ? "checked" : ""}>${q.titulo}</label>`).join("")
+    + [["tier", "Tier list"], ["votos", "Votación por categorías"]].map(([k, t]) => `<label class="chk"><input type="checkbox" data-act="${k}" ${A[k] ? "checked" : ""}>${t}</label>`).join("");
   $("tog").querySelectorAll("input").forEach(i => i.onchange = async () => {
-    Q.find(q => q.id === i.dataset.id).activo = i.checked;
+    if (i.dataset.act) A[i.dataset.act] = i.checked; else Q.find(q => q.id === i.dataset.id).activo = i.checked;
     try { await guardarQ(); msg("m0", "Guardado."); } catch (e) { msg("m0", "Error al guardar" + err(e)); }
   });
-  $("qsel").innerHTML = Q.map(q => `<option value="${q.id}">${q.titulo}</option>`).join("") + '<option value="general">General (suma de todos)</option>';
+  $("qsel").innerHTML = Q.map(q => `<option value="${q.id}">${q.titulo}</option>`).join("") + '<option value="general">General (suma de minijuegos)</option><option value="tier">Tier list</option><option value="votos">Votación por categorías</option>';
   Q.forEach(q => $("ti-" + q.id).value = q.titulo);
 }
 async function cargar() {
   try {
-    const c = await get("publico", "config"); if (c) { if (c.quizzes) Q = c.quizzes; $("ins").value = (c.participantes || []).join("\n"); }
+    const c = await get("publico", "config"); if (c) { if (c.quizzes) Q = c.quizzes; if (c.act) A = { ...A, ...c.act }; $("ins").value = (c.participantes || []).join("\n"); }
     const kp = await get("claves", "personas"); if (kp) $("pn").value = kp.pn.join("\n");
     for (const id of ["q1", "q2"]) { const k = await get("claves", id); if (k) $("tx-" + id).value = k.txt || ""; }
   } catch (e) { msg("m0", "No se pudo leer la configuración (¿reglas de Firestore actualizadas?)."); }
@@ -107,9 +109,31 @@ document.querySelectorAll("[data-pub]").forEach(b => b.onclick = async () => {
 });
 
 const puntuar = (r, K) => { let a = 0, t = 0, p = 0; r.resp.forEach(x => { t += x.t; if (x.e === (r.quiz === "personas" ? K.pn[x.p - 1] : K.c[x.i])) { a++; p += Math.round(100 + 900 * (1 - x.t / T)); } }); return { a, t, p, n: r.resp.length }; };
+const rdoc = id => (id === "tier" || id === "votos" ? "res_" : "ranking_") + id;
+const tabla = (cab, rows) => `<table><tr>${cab.map((c, i) => `<th${i > 1 ? ' class="n"' : ""}>${c}</th>`).join("")}</tr>${rows.map(r => `<tr>${r.map((c, i) => `<td${i > 1 ? ' class="n"' : ""}>${c}</td>`).join("")}</tr>`).join("")}</table>`;
+async function extra(id) {
+  const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id))), docs = [];
+  s.forEach(d => docs.push(d.data()));
+  let html;
+  if (id === "tier") { // estilo Balón de Oro: 15 puntos al 1.º … 1 punto al 15.º
+    const acc = {}; for (let i = 1; i <= 15; i++) acc[i] = { foto: i, puntos: 0, primeros: 0 };
+    docs.forEach(r => r.orden.forEach((f, k) => { if (acc[f]) { acc[f].puntos += 15 - k; if (!k) acc[f].primeros++; } }));
+    const f = Object.values(acc).sort((a, b) => b.puntos - a.puntos || b.primeros - a.primeros);
+    pub = { filas: f, votantes: docs.length };
+    html = tabla(["#", "Foto", "Puntos", "1.º lugares"], f.map((x, i) => [i + 1, "Foto " + x.foto, x.puntos, x.primeros]));
+  } else { // votos por categoría
+    const cats = CATS.map(([k, t]) => { const c = {}; docs.forEach(r => { const f = r.votos?.[k]; if (f) c[f] = (c[f] || 0) + 1; });
+      return { id: k, titulo: t, filas: Object.entries(c).map(([f, n]) => ({ foto: +f, votos: n })).sort((a, b) => b.votos - a.votos) }; });
+    pub = { cats, votantes: docs.length };
+    html = cats.map(c => `<h2>${c.titulo}</h2>` + (c.filas.length ? tabla(["#", "Foto", "Votos"], c.filas.map((x, i) => [i + 1, "Foto " + x.foto, x.votos])) : "<p>Sin votos.</p>")).join("");
+  }
+  $("out").className = "tbl card"; $("out").innerHTML = html;
+  $("rk").hidden = !docs.length; msg("m2", `${docs.length} personas participaron.`);
+}
 $("calc").onclick = async () => {
   const id = $("qsel").value;
   try {
+    if (id === "tier" || id === "votos") return await extra(id);
     const K = {};
     for (const q of Q) if (id === "general" || q.id === id) { const k = await get("claves", q.id); if (k) K[q.id] = k; }
     if (!Object.keys(K).length) return msg("m2", "Ese quiz aún no está publicado.");
@@ -124,21 +148,21 @@ $("calc").onclick = async () => {
     $("out").className = "tbl card";
     $("out").innerHTML = `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
     ${filas.map((x, i) => `<tr><td>${i + 1}</td><td>${x.n}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>`;
-    $("rk").hidden = !filas.length; msg("m2", `${filas.length} personas en el ranking.`);
+    pub = { filas }; $("rk").hidden = !filas.length; msg("m2", `${filas.length} personas en el ranking.`);
   } catch (e) { msg("m2", "No se pudieron leer los resultados" + err(e)); }
 };
 $("rk").onclick = async () => {
-  try { await fs.setDoc(ref("publico", "ranking_" + $("qsel").value), { filas, fecha: Date.now() }); msg("m2", "Ranking publicado."); }
+  try { await fs.setDoc(ref("publico", rdoc($("qsel").value)), { ...pub, fecha: Date.now() }); msg("m2", "Ranking publicado."); }
   catch (e) { msg("m2", "Error al publicar" + err(e)); }
 };
 $("rst").onclick = async () => {
   const id = $("qsel").value; if (id === "general") return msg("m2", "Elige un quiz concreto para reiniciarlo.");
-  const q = Q.find(x => x.id === id);
+  const q = Q.find(x => x.id === id) || { titulo: id === "tier" ? "Tier list" : "Votación" };
   if (!confirm(`¿Borrar TODOS los resultados y el ranking de "${q.titulo}"? Todos podrán volver a jugarlo.`)) return;
   try {
     const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", id)));
-    const b = fs.writeBatch(db); s.forEach(d => b.delete(d.ref)); b.delete(ref("publico", "ranking_" + id)); await b.commit();
-    filas = []; $("out").innerHTML = ""; $("out").className = ""; $("rk").hidden = true; msg("m2", `Reiniciado: ${s.size} resultados borrados.`);
+    const b = fs.writeBatch(db); s.forEach(d => b.delete(d.ref)); b.delete(ref("publico", rdoc(id))); await b.commit();
+    filas = []; pub = {}; $("out").innerHTML = ""; $("out").className = ""; $("rk").hidden = true; msg("m2", `Reiniciado: ${s.size} resultados borrados.`);
   } catch (e) { msg("m2", "No se pudo reiniciar" + err(e)); }
 };
 </script></body></html>
