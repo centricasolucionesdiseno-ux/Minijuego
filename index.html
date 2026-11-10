@@ -3,7 +3,7 @@
 <title>Quizzes</title><link rel="stylesheet" href="style.css"></head>
 <body>
 <div class="shell">
-<aside><div class="brand">QUIZZES</div><nav><button class="ni on" id="n1">Jugar</button><button class="ni" id="n2">Ranking</button></nav></aside>
+<aside><div class="brand"><img class="lg lg-c" src="media/logo-claro.png" alt="Logo" onload="this.parentNode.querySelector('.bt').hidden=true" onerror="this.remove()"><img class="lg lg-o" src="media/logo-oscuro.png" alt="" onload="this.parentNode.querySelector('.bt').hidden=true" onerror="this.remove()"><span class="bt">QUIZZES</span></div><nav><button class="ni on" id="n1">Minijuegos</button><button class="ni" id="n3">Tier list</button><button class="ni" id="n4">Votación</button><button class="ni" id="n2">Ranking minijuegos</button></nav><img class="neb" src="media/nebulina.png" alt="Nebulina" onerror="this.remove()"></aside>
 <div class="col"><header><button class="ib" id="burger" aria-label="Menú">☰</button><span class="sp"></span><button class="ib" id="tema" aria-label="Cambiar tema">◐</button><div class="usr" id="usr"></div></header>
 <main id="app"></main>
 <footer><span>© 2026 · Juego interno</span><span id="ses"></span><span><i class="dot"></i>Conectado &nbsp; <span id="fecha"></span></span></footer></div></div>
@@ -12,15 +12,16 @@
 import cfg from "./firebase-config.js";
 const B = "https://www.gstatic.com/firebasejs/10.12.0/";
 const $ = document.getElementById("app"), g = i => document.getElementById(i), T = 10, NF = 4, NQ = 4;
-let db, fs, conf, yo = "", jugando = false;
+let db, fs, conf, yo = "", jugando = false, destino = null;
 const m = t => `<div class="crumb">⌂ Inicio › <b>${t}</b></div>`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
 const get = async (c, d) => { const s = await fs.getDoc(fs.doc(db, c, d)); return s.exists() ? s.data() : null; };
-const act = i => ["n1", "n2"].forEach(x => g(x).classList.toggle("on", x === i));
+const act = i => ["n1", "n2", "n3", "n4"].forEach(x => g(x).classList.toggle("on", x === i));
 const nav = f => () => { if (!jugando) { document.body.classList.remove("nav"); f(); } };
-g("n1").onclick = nav(() => inicio()); g("n2").onclick = nav(() => ranking());
-const fallo = t => { $.innerHTML = `<p class="err">${t}</p><button id="b">Volver</button>`; g("b").onclick = () => inicio(); };
+const ir = f => { if (yo) return f(); destino = f; return inicio(); }; // pide identificarse y luego vuelve a donde iba
+g("n1").onclick = nav(() => ir(menu)); g("n3").onclick = nav(() => ir(tier)); g("n4").onclick = nav(() => ir(votos)); g("n2").onclick = nav(() => ranking());
+const fallo = t => { $.innerHTML = `<p class="err">${t}</p><button id="b">Volver</button>`; g("b").onclick = () => ir(menu); };
 async function cargar() {
   if (!db) { fs = await import(B + "firebase-firestore.js"); db = fs.getFirestore((await import(B + "firebase-app.js")).initializeApp(cfg)); }
   conf = await get("publico", "config");
@@ -30,7 +31,6 @@ async function inicio(msg = "") {
   act("n1");
   try { await cargar(); } catch (e) { return $.innerHTML = '<p class="err">No se pudo conectar. Revisa firebase-config.js.</p>'; }
   if (!conf) return $.innerHTML = "<h1>Quizzes</h1><p>El juego aún no está listo. Vuelve pronto.</p>";
-  if (yo) return menu();
   window.setUser?.("");
   $.innerHTML = `<h1>Bienvenido</h1>${m("Identificación")}<div class="card"><label for="who">¿Quién eres?</label>
   <select id="who"><option value="">Elige tu nombre</option>${(conf.participantes || []).map(p => `<option>${esc(p)}</option>`).join("")}</select>
@@ -42,7 +42,7 @@ function confirmar(n) {
   $.innerHTML = `<h1>Confirma tu nombre</h1>${m("Confirmación")}<div class="card">
   <p>¿Estás seguro de que eres <b>${esc(n)}</b>?</p><p class="note">Cada quiz se juega una sola vez y no podrás cambiar de nombre después.</p>
   <button class="main" id="si">Sí, soy yo</button><button class="ghost" id="no">No, volver</button></div>`;
-  g("si").onclick = () => { yo = n; window.setUser?.(n); menu(); };
+  g("si").onclick = () => { yo = n; window.setUser?.(n); const f = destino || menu; destino = null; f(); };
   g("no").onclick = () => inicio();
 }
 
@@ -52,7 +52,7 @@ async function menu(msg = "") {
     await cargar();
     const qs = conf.quizzes.filter(q => q.activo);
     const hechos = await Promise.all(qs.map(q => get("resultados", q.id + ":" + yo)));
-    $.innerHTML = `<h1>Quizzes</h1>${m("Quizzes")}${msg ? `<p class="note">${msg}</p>` : ""}<div class="card">${qs.length ? qs.map((q, i) =>
+    $.innerHTML = `<h1>Minijuegos</h1>${m("Minijuegos")}${msg ? `<p class="note">${msg}</p>` : ""}<div class="card">${qs.length ? qs.map((q, i) =>
       `<div class="fila"><span><b>${esc(q.titulo)}</b><br><small>${q.tipo === "personas" ? `${NQ} personas · 4 fotos que ganan detalle` : "Preguntas generales · 10 s cada una"}</small></span>
       ${hechos[i] ? '<span class="note">Completado</span>' : `<button class="main" data-q="${q.id}">Jugar</button>`}</div>`).join("") : "<p>No hay quizzes habilitados por ahora.</p>"}</div>
     <button id="sal">Cambiar de persona</button>`;
@@ -122,5 +122,81 @@ async function ranking(id) {
   <p class="note">Puntúa más quien acierta y responde más rápido; el empate se rompe por menor tiempo total.</p>` : "<p>Aún no hay ranking publicado para este quiz.</p>"}</div>`;
   $.querySelectorAll("[data-q]").forEach(b => b.onclick = () => ranking(b.dataset.q));
 }
-inicio().catch(e => { $.innerHTML = `<p class="err">Error al cargar: ${e.message}</p>`; });
+const CATS = [["jungla", "Jungla Zen"], ["copiloto", "Copiloto Estrella"], ["setup", "Setup Ergonómico"], ["rincon", "Rincón Creativo"]];
+const N = 15, foto = i => `media/tier-${i}.jpg`;
+let orden = [], paso = 0, v = {};
+const info = (t, c) => { $.innerHTML = `<h1>${t}</h1>${m(t)}<p>${c}</p>`; };
+const mini = f => `<img class="mini" src="${foto(f)}" alt=""> Foto ${f}`;
+async function estado(tipo) {
+  await cargar();
+  const [hecho, res] = await Promise.all([get("resultados", tipo + ":" + yo), get("publico", "res_" + tipo)]);
+  return { on: !!(conf.act || {})[tipo], hecho, res };
+}
+const tablaTier = r => `<table><tr><th>#</th><th>Foto</th><th class="n">Puntos</th><th class="n">1.º lugares</th></tr>${r.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${mini(x.foto)}</td><td class="n">${x.puntos}</td><td class="n">${x.primeros}</td></tr>`).join("")}</table>
+  <p class="note">Cada tier list reparte de ${N} puntos (1.º) a 1 punto (${N}.º). Gana la foto con más puntos. Votantes: ${r.votantes}.</p>`;
+const tablaVotos = r => r.cats.map(c => `<h2>${c.titulo}</h2><div class="card tbl">${c.filas.length ? `<table><tr><th>#</th><th>Foto</th><th class="n">Votos</th></tr>${c.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${mini(x.foto)}</td><td class="n">${x.votos}</td></tr>`).join("")}</table>` : "<p>Sin votos.</p>"}</div>`).join("") + `<p class="note">Votantes: ${r.votantes}.</p>`;
+
+async function tier() {
+  act("n3"); let s;
+  try { s = await estado("tier"); } catch (e) { return fallo("No se pudo cargar la tier list."); }
+  if (s.res) { $.innerHTML = `<h1>Tier list</h1>${m("Tier list")}<p>Resultado final: suma de los puntos de todos los votantes.</p><div class="card tbl">${tablaTier(s.res)}</div>`; return; }
+  if (s.hecho) return info("Tier list", "¡Listo! Tu tier list quedó guardada. El resultado aparecerá cuando el organizador lo publique.");
+  if (!s.on) return info("Tier list", "Todavía no está habilitada. Vuelve pronto.");
+  orden = []; pintarTier();
+}
+function pintarTier() {
+  const y = window.scrollY, libres = [...Array(N)].map((_, i) => i + 1).filter(i => !orden.includes(i));
+  $.innerHTML = `<h1>Tier list</h1>${m("Tier list")}
+  <p>Ordena las ${N} fotos de la mejor (1.º) a la peor (${N}.º) según la ergonomía, la calidad de la foto y su explicación. Toca una foto para verla en grande y asignarla al siguiente puesto.</p>
+  <div class="card"><h2>Tu ranking (${orden.length}/${N})</h2>${orden.length ? orden.map((f, k) => `<div class="fila"><span class="rk">${k + 1}.º</span><span class="it">${mini(f)}</span>
+    <span class="acc"><button data-a="u" data-k="${k}" aria-label="Subir">▲</button><button data-a="d" data-k="${k}" aria-label="Bajar">▼</button><button data-a="x" data-k="${k}" aria-label="Quitar">✕</button></span></div>`).join("") : '<p class="note">Aún no has asignado ninguna foto.</p>'}</div>
+  <div class="card"><h2>Fotos por ordenar</h2><div class="gal">${libres.map(f => `<button class="th" data-v="${f}"><img src="${foto(f)}" alt="Foto ${f}"><span>Foto ${f}</span></button>`).join("") || '<p class="note">¡Ya ordenaste todas!</p>'}</div></div>
+  <button class="main" id="env" ${orden.length === N ? "" : "disabled"}>Enviar mi tier list</button><dialog id="dlg"></dialog>`;
+  $.querySelectorAll("[data-v]").forEach(b => b.onclick = () => {
+    const f = +b.dataset.v, d = g("dlg");
+    d.innerHTML = `<img src="${foto(f)}" alt="Foto ${f}"><h2>Foto ${f}</h2><button class="main" id="as">Asignar al puesto ${orden.length + 1}</button><button class="ghost" id="ce">Cerrar</button>`;
+    g("as").onclick = () => { orden.push(f); pintarTier(); };
+    g("ce").onclick = () => d.close();
+    d.showModal();
+  });
+  $.querySelectorAll("[data-a]").forEach(b => b.onclick = () => {
+    const k = +b.dataset.k, a = b.dataset.a;
+    if (a === "x") orden.splice(k, 1);
+    else { const j = a === "u" ? k - 1 : k + 1; if (j >= 0 && j < orden.length) [orden[k], orden[j]] = [orden[j], orden[k]]; }
+    pintarTier();
+  });
+  g("env").onclick = async () => {
+    if (!confirm("¿Enviar tu tier list? No podrás cambiarla después.")) return;
+    g("env").disabled = true;
+    try { await fs.setDoc(fs.doc(db, "resultados", "tier:" + yo), { quiz: "tier", name: yo, orden, fecha: Date.now() }); tier(); }
+    catch (e) { g("env").disabled = false; alert("No se pudo guardar. Intenta de nuevo."); }
+  };
+  window.scrollTo(0, y);
+}
+
+async function votos() {
+  act("n4"); let s;
+  try { s = await estado("votos"); } catch (e) { return fallo("No se pudo cargar la votación."); }
+  if (s.res) { $.innerHTML = `<h1>Votación</h1>${m("Resultados")}${tablaVotos(s.res)}`; return; }
+  if (s.hecho) return info("Votación", "¡Listo! Tus votos quedaron guardados. El resultado aparecerá cuando el organizador lo publique.");
+  if (!s.on) return info("Votación", "Todavía no está habilitada. Vuelve pronto.");
+  v = {}; paso = 0; pintarVoto();
+}
+function pintarVoto() {
+  const y = window.scrollY, [id, nombre] = CATS[paso], ult = paso === CATS.length - 1;
+  $.innerHTML = `<h1>Votación</h1>${m(`Categoría ${paso + 1} de ${CATS.length}`)}<h2>${nombre}</h2>
+  <p class="note">Elige la foto que mejor representa esta categoría. Un voto por categoría.</p>
+  <div class="gal">${[...Array(N)].map((_, i) => i + 1).map(f => `<button class="th ${v[id] === f ? "sel" : ""}" data-v="${f}"><img src="${foto(f)}" alt="Foto ${f}"><span>Foto ${f}</span></button>`).join("")}</div>
+  <div class="tabs" style="margin-top:14px"><button id="ant" ${paso ? "" : "disabled"}>Anterior</button><button class="main" id="sig" ${v[id] ? "" : "disabled"}>${ult ? "Enviar votos" : "Siguiente"}</button></div>`;
+  $.querySelectorAll("[data-v]").forEach(b => b.onclick = () => { v[id] = +b.dataset.v; pintarVoto(); });
+  g("ant").onclick = () => { paso--; pintarVoto(); window.scrollTo(0, 0); };
+  g("sig").onclick = async () => {
+    if (!ult) { paso++; pintarVoto(); return window.scrollTo(0, 0); }
+    if (!confirm("¿Enviar tus votos? No podrás cambiarlos después.")) return;
+    try { await fs.setDoc(fs.doc(db, "resultados", "votos:" + yo), { quiz: "votos", name: yo, votos: v, fecha: Date.now() }); votos(); }
+    catch (e) { alert("No se pudo guardar. Intenta de nuevo."); }
+  };
+  window.scrollTo(0, y);
+}
+ir(menu).catch(e => { $.innerHTML = `<p class="err">Error al cargar: ${e.message}</p>`; });
 </script></body></html>
