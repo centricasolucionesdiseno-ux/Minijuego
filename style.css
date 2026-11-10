@@ -96,3 +96,22 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .p3 .blk{height:80px;background:#a8652a}
 .prem{width:100%;margin-top:8px;padding:10px 6px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-weight:700}
 .fila select,.fila input{margin:0}
+/* escenario de revelación del podio */
+.stage{position:relative;overflow:hidden;margin:16px 0;padding:20px 16px;border-radius:14px;background:radial-gradient(circle at 50% 0,#1d2b5a,#0a0a0a 70%);color:#fff;text-align:center}
+.stage:fullscreen{display:flex;flex-direction:column;justify-content:center;border-radius:0}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.ptop{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:16px}
+.ptop button{width:auto}
+.stage .podio{margin:0;min-height:300px}
+.stage .who small{color:#b8c2d8}
+.stage .who b{font-size:1.2rem}
+.stage .prem{background:#ffffff14;border-color:#ffffff33;color:#fff}
+.pl:not(.on) .who b{opacity:.35}
+.pl:not(.on) .prem{opacity:0}
+.pl .prem{transition:opacity .6s}
+.pl.on .who b{animation:sube .6s ease-out}
+.p1.on .blk{animation:brilla 2s ease-in-out infinite}
+.cd{position:absolute;inset:0;z-index:2;display:grid;place-items:center;background:rgba(0,0,0,.6);font-size:7rem;font-weight:800}
+@keyframes sube{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+@keyframes brilla{50%{filter:brightness(1.4)}}
+@media(prefers-reduced-motion:reduce){.pl.on .who b,.p1.on .blk{animation:none}}
