@@ -110,20 +110,27 @@ async function fin(q, resp) {
   menu("¡Listo! Tus respuestas quedaron guardadas. El ranking aparece cuando el organizador lo publique.");
 }
 
+const podio = r => !r ? '<div class="card"><p>Aún no se han publicado los resultados de la votación.</p></div>' : `<div class="podio">
+  <div class="pl p2"><div class="who"><img class="pfoto" src="${foto(r.segundo)}" alt="Foto ${r.segundo}"><b>Foto ${r.segundo}</b><small>Mejor foto de la tier list</small></div><div class="blk">2</div><div class="prem">Tarde de desconexión</div></div>
+  <div class="pl p1"><div class="who"><b>${esc(r.primero)}</b><small>Más puntos en los minijuegos</small></div><div class="blk">1</div><div class="prem">Bono</div></div>
+  <div class="pl p3"><div class="who"><b>${esc(r.tercero)}</b><small>Elegido por el organizador</small></div><div class="blk">3</div><div class="prem">Lunes de llegar tarde</div></div></div>`;
+
 async function ranking(id) {
   act("n2");
   try { await cargar(); } catch (e) { return fallo("No se pudo cargar el ranking."); }
   const qs = conf?.quizzes || []; if (!qs.length) return fallo("Aún no hay quizzes.");
   id = id || qs[0].id; let r;
-  try { r = await get("publico", "ranking_" + id); } catch (e) { return fallo("No se pudo cargar el ranking."); }
-  $.innerHTML = `<h1>Ranking</h1>${m("Ranking")}<div class="tabs">${[...qs, { id: "general", titulo: "General (suma de todos)" }].map(x => `<button class="${x.id === id ? "main" : ""}" data-q="${x.id}">${esc(x.titulo)}</button>`).join("")}</div>
-  <div class="card tbl">${r ? `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
-  ${r.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.n)}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>
+  try { r = await get("publico", id === "podio" ? "podio" : "ranking_" + id); } catch (e) { return fallo("No se pudo cargar el ranking."); }
+  const tabs = [...qs, { id: "general", titulo: "General (suma de minijuegos)" }, { id: "podio", titulo: "Resultados de votación" }];
+  const cuerpo = id === "podio" ? podio(r) : `<div class="card tbl">${r ? `<table><tr><th>#</th><th>Nombre</th><th class="n">Aciertos</th><th class="n">Tiempo</th><th class="n">Puntos</th></tr>
+  ${r.filas.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.n)}${x.bono ? ` <small class="note">(incluye bono +${x.bono})</small>` : ""}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>
   <p class="note">Puntúa más quien acierta y responde más rápido; el empate se rompe por menor tiempo total.</p>` : "<p>Aún no hay ranking publicado para este quiz.</p>"}</div>`;
+  $.innerHTML = `<h1>Ranking</h1>${m("Ranking")}<div class="tabs">${tabs.map(x => `<button class="${x.id === id ? "main" : ""}" data-q="${x.id}">${esc(x.titulo)}</button>`).join("")}</div>${cuerpo}`;
   $.querySelectorAll("[data-q]").forEach(b => b.onclick = () => ranking(b.dataset.q));
 }
+
 const CATS = [["jungla", "Jungla Zen"], ["copiloto", "Copiloto Estrella"], ["setup", "Setup Ergonómico"], ["rincon", "Rincón Creativo"]];
-const N = 15, foto = i => `media/tier-${i}.jpg`;
+const N = 15, foto = i => `media/tier-${i}.png`;
 let orden = [], paso = 0, v = {};
 const info = (t, c) => { $.innerHTML = `<h1>${t}</h1>${m(t)}<p>${c}</p>`; };
 const mini = f => `<img class="mini" src="${foto(f)}" alt=""> Foto ${f}`;
