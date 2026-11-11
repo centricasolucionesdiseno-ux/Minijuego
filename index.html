@@ -11,7 +11,7 @@
 <script type="module">
 import cfg from "./firebase-config.js";
 const B = "https://www.gstatic.com/firebasejs/10.12.0/";
-const $ = document.getElementById("app"), g = i => document.getElementById(i), T = 10, NF = 4, NQ = 4;
+const $ = document.getElementById("app"), g = i => document.getElementById(i), T = 20, NF = 4, NQ = 4;
 let db, fs, conf, yo = "", jugando = false, destino = null;
 const m = t => `<div class="crumb">⌂ Inicio › <b>${t}</b></div>`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -53,7 +53,7 @@ async function menu(msg = "") {
     const qs = conf.quizzes.filter(q => q.activo);
     const hechos = await Promise.all(qs.map(q => get("resultados", q.id + ":" + yo)));
     $.innerHTML = `<h1>Minijuegos</h1>${m("Minijuegos")}${msg ? `<p class="note">${msg}</p>` : ""}<div class="card">${qs.length ? qs.map((q, i) =>
-      `<div class="fila"><span><b>${esc(q.titulo)}</b><br><small>${q.tipo === "personas" ? `${NQ} personas · 4 fotos que ganan detalle` : "Preguntas generales · 10 s cada una"}</small></span>
+      `<div class="fila"><span><b>${esc(q.titulo)}</b><br><small>${q.tipo === "personas" ? `${NQ} personas · 4 fotos que ganan detalle` : `Preguntas generales · ${T} s cada una`}</small></span>
       ${hechos[i] ? '<span class="note">Completado</span>' : `<button class="main" data-q="${q.id}">Jugar</button>`}</div>`).join("") : "<p>No hay quizzes habilitados por ahora.</p>"}</div>
     <button id="sal">Cambiar de persona</button>`;
     $.querySelectorAll("[data-q]").forEach(b => b.onclick = () => empezar(qs.find(q => q.id === b.dataset.q)));
@@ -114,14 +114,16 @@ const PREM = { 3: "Lunes de llegar tarde", 2: "Tarde de desconexión", 1: "Bono"
 const DESC = { 3: "Elegido por el organizador", 2: "Mejor foto de la tier list", 1: "Más puntos en los minijuegos" };
 const nm = x => typeof x === "number" ? "Foto " + x : x;
 const podio = r => !r ? '<div class="card"><p>Aún no se han publicado los resultados de la votación.</p></div>' : `<div class="stage" id="stage"><canvas id="cv"></canvas>
-  <div class="ptop"><button class="main" id="rv">Revelar 3.er lugar</button><button id="snd">Sonido: sí</button><button id="fs">Pantalla completa</button><button id="rs">Reiniciar</button></div>
+  <div class="ptop"><button class="main" id="rv">${r.honorificos?.length ? "Revelar premios honoríficos" : "Revelar 3.er lugar"}</button><button id="snd">Sonido: sí</button><button id="fs">Pantalla completa</button><button id="rs">Reiniciar</button></div>
   <div class="podio" aria-live="polite">${[2, 1, 3].map(p => `<div class="pl p${p}" id="pl${p}"><div class="who"><b>¿?</b><small>&nbsp;</small></div><div class="blk">${p}</div><div class="prem">${PREM[p]}</div></div>`).join("")}</div>
+  ${r.honorificos?.length ? `<div class="hon">${r.honorificos.map((h, i) => `<div class="hc" id="hn${i}"><small>Premio honorífico</small><span>${esc(h.cat)}</span><b>¿?</b></div>`).join("")}</div>` : ""}
   <div class="cd" id="cd" hidden></div></div>`;
 
 function iniciarPodio(r) {
   const nombres = { 1: nm(r.primero), 2: nm(r.segundo), 3: nm(r.tercero) };
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let pos = 3, sonido = true, ocupado = false, ctx;
+  const hon = r.honorificos || [], sig = { 3: "Revelar 3.er lugar", 2: "Revelar 2.º lugar", 1: "Revelar 1.er lugar" };
+  let pos = hon.length ? 4 : 3, sonido = true, ocupado = false, ctx; // 4 = premios honoríficos (van antes del 3.er lugar)
   const bip = (f, d, tipo, vol, at = 0) => { // sonidos sintetizados en el navegador, sin archivos
     if (!sonido) return; ctx ||= new (window.AudioContext || window.webkitAudioContext)();
     const o = ctx.createOscillator(), gn = ctx.createGain(), t = ctx.currentTime + at;
@@ -148,11 +150,19 @@ function iniciarPodio(r) {
       for (const n of [3, 2, 1]) { cd.textContent = n; bip(n === 1 ? 660 : 440, .15, "square", .08); await new Promise(ok => setTimeout(ok, 800)); }
       cd.hidden = true;
     }
-    const pl = g("pl" + pos); pl.classList.add("on");
-    pl.querySelector("b").textContent = nombres[pos]; pl.querySelector("small").textContent = DESC[pos];
-    fanfarria(pos === 1); if (!reduce) confeti(pos === 1 ? 240 : 90);
+    if (pos === 4) {
+      for (let i = 0; i < hon.length; i++) {
+        const c = g("hn" + i); c.classList.add("on"); c.querySelector("b").textContent = hon[i].n;
+        bip(660 + i * 110, .35, "triangle", .15); if (!reduce) confeti(35);
+        await new Promise(ok => setTimeout(ok, reduce ? 0 : 1200));
+      }
+    } else {
+      const pl = g("pl" + pos); pl.classList.add("on");
+      pl.querySelector("b").textContent = nombres[pos]; pl.querySelector("small").textContent = DESC[pos];
+      fanfarria(pos === 1); if (!reduce) confeti(pos === 1 ? 240 : 90);
+    }
     pos--; ocupado = false;
-    g("rv").textContent = pos ? `Revelar ${pos === 2 ? "2.º" : "1.er"} lugar` : "¡Felicitaciones!";
+    g("rv").textContent = pos ? sig[pos] : "¡Felicitaciones!";
     g("rv").disabled = !pos;
   };
   g("rv").onclick = revelar;
