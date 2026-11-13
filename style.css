@@ -124,3 +124,4 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .hc.on{border-color:#c9971a;background:#c9971a33}
 .hc.on b{opacity:1;animation:sube .6s ease-out}
 @media(prefers-reduced-motion:reduce){.hc.on b{animation:none}}
+button.peligro{background:var(--bad);color:#fff}
