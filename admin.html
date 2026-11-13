@@ -53,7 +53,7 @@ const ref = (c, d) => fs.doc(db, c, d);
 const get = async (c, d) => { const s = await fs.getDoc(ref(c, d)); return s.exists() ? s.data() : null; };
 const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
 const err = e => " (" + (e.code || e.message) + ")" + (e.code === "permission-denied" ? ": actualiza las reglas de Firestore (falta la colección claves)" : "");
-const PMIN = 100, PMAX = 800; // puntos por acierto: PMAX si responde al instante, PMIN al límite del tiempo
+const PMIN = 100, PMAX = 1000; // puntos por acierto: PMAX si responde al instante, PMIN al límite del tiempo
 const T = 20, T0 = [{ id: "personas", titulo: "¿Quién es?", tipo: "personas", activo: false }, { id: "q1", titulo: "Quiz general 1", tipo: "general", activo: false }, { id: "q2", titulo: "Quiz general 2", tipo: "general", activo: false }];
 const CATS = [["jungla", "Jungla Zen"], ["copiloto", "Copiloto Estrella"], ["setup", "Setup Ergonómico"], ["rincon", "Rincón Creativo"]];
 let Q = T0.map(x => ({ ...x })), filas = [], A = { tier: false, votos: false }, pub = {}, BN = [];
@@ -213,7 +213,7 @@ $("bsave").onclick = async () => {
     const n = $("bn" + i).value, raw = $("bp" + i).value, p = Number(raw);
     if (!n && !raw) continue;
     if (!n) return msg("m3", `Fila ${i + 1}: elige la persona.`);
-    if (!Number.isInteger(p) || p < 10 || p > 50) return msg("m3", `Fila ${i + 1}: los puntos deben ser un número entero entre 10 y 50.`);
+    if (!Number.isInteger(p) || p < 100 || p > 500) return msg("m3", `Fila ${i + 1}: los puntos deben ser un número entero entre 100 y 500.`);
     if (lista.some(x => x.n === n)) return msg("m3", `${n} está repetida.`);
     lista.push({ n, p });
   }
