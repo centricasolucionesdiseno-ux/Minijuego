@@ -21,7 +21,7 @@
 <div class="card"><h2>Resultados</h2><label for="qsel">Quiz</label><select id="qsel"></select>
 <button class="main" id="calc">Calcular ranking</button><div id="out"></div>
 <button class="ghost" id="rk" hidden>Publicar ranking a los jugadores</button>
-<button class="ghost" id="rst">Reiniciar este quiz (borra resultados y ranking)</button><p class="note" id="m2"></p></div>
+<button class="ghost" id="rst">Reiniciar este quiz (borra resultados y ranking)</button><p class="note" id="m2">Cada acierto vale de 800 puntos (respuesta inmediata) a 100 (al límite de tiempo). Los fallos valen 0.</p></div>
 <div class="card"><h2>Bonos (se suman al ranking general)</h2><p class="note">Hasta 5 personas, entre 10 y 50 puntos cada una. Después de guardar, recalcula y publica el ranking general.</p>
 <div id="bon"></div><button class="main" id="bsave">Guardar bonos</button><p class="note" id="m3"></p></div>
 <div class="card"><h2>Nombres de las fotos de la tier list</h2><p class="note">Una por línea, en el orden de tier-1 a tier-15. Solo se usan para publicar resultados con nombres; nunca se publican las fotos.</p>
@@ -29,6 +29,8 @@
 <div class="card"><h2>Podio final (Resultados de votación)</h2><p class="note">1.º: mayor puntaje general de minijuegos, con bonos (premio: Bono). 2.º: mejor foto de la tier list (Tarde de desconexión). 3.º: la persona que elijas (Lunes de llegar tarde). Antes del 3.º se revelan los 4 premios honoríficos: el ganador de cada categoría de la votación.</p>
 <label for="p3">Persona del 3.er puesto</label><select id="p3"></select>
 <button class="main" id="pod">Calcular y publicar podio</button><p class="note" id="m4"></p></div>
+<div class="card"><h2>Limpiar todo</h2><p class="note">Borra los resultados de todos los quizzes, la tier list y la votación, los rankings publicados, el podio y los bonos. Se conservan las preguntas, los nombres, los títulos y qué quizzes están habilitados. No se puede deshacer.</p>
+<button class="peligro" id="limpiar">Limpiar todos los quizzes, rankings y votaciones</button><p class="note" id="m6"></p></div>
 </div></main>
 <footer><span>© 2026 · Juego interno</span><span id="ses"></span><span><i class="dot"></i>Conectado &nbsp; <span id="fecha"></span></span></footer></div></div>
 <script src="ui.js"></script>
@@ -51,6 +53,7 @@ const ref = (c, d) => fs.doc(db, c, d);
 const get = async (c, d) => { const s = await fs.getDoc(ref(c, d)); return s.exists() ? s.data() : null; };
 const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
 const err = e => " (" + (e.code || e.message) + ")" + (e.code === "permission-denied" ? ": actualiza las reglas de Firestore (falta la colección claves)" : "");
+const PMIN = 100, PMAX = 800; // puntos por acierto: PMAX si responde al instante, PMIN al límite del tiempo
 const T = 20, T0 = [{ id: "personas", titulo: "¿Quién es?", tipo: "personas", activo: false }, { id: "q1", titulo: "Quiz general 1", tipo: "general", activo: false }, { id: "q2", titulo: "Quiz general 2", tipo: "general", activo: false }];
 const CATS = [["jungla", "Jungla Zen"], ["copiloto", "Copiloto Estrella"], ["setup", "Setup Ergonómico"], ["rincon", "Rincón Creativo"]];
 let Q = T0.map(x => ({ ...x })), filas = [], A = { tier: false, votos: false }, pub = {}, BN = [];
@@ -123,7 +126,7 @@ document.querySelectorAll("[data-pub]").forEach(b => b.onclick = async () => {
   } catch (e) { msg(m, "Error al publicar" + err(e)); }
 });
 
-const puntuar = (r, K) => { let a = 0, t = 0, p = 0; r.resp.forEach(x => { t += x.t; if (x.e === (r.quiz === "personas" ? K.pn[x.p - 1] : K.c[x.i])) { a++; p += Math.round(100 + 900 * (1 - x.t / T)); } }); return { a, t, p, n: r.resp.length }; };
+const puntuar = (r, K) => { let a = 0, t = 0, p = 0; r.resp.forEach(x => { t += x.t; if (x.e === (r.quiz === "personas" ? K.pn[x.p - 1] : K.c[x.i])) { a++; p += Math.round(PMIN + (PMAX - PMIN) * (1 - x.t / T)); } }); return { a, t, p, n: r.resp.length }; };
 const DEF = ["Carlos Torres", "Edward Macias", "Ivan Delgado", "Kevin A", "Mauricio Quiroz", "Alejandra Sanchez", "Andrea Guerrero", "Brahian Cortes", "Edwin Gutierrez", "Eramis Olivero", "Isabela Garcia", "Juan Hurtado", "Santiago Calle", "Tatiana Ruiz", "Vanessa Luna"];
 $("fn").value = DEF.join("\n");
 const nombresFoto = () => { const l = lines("fn"); return l.length === 15 ? l : null; };
@@ -191,6 +194,18 @@ $("calc").onclick = async () => {
     ${filas.map((x, i) => `<tr><td>${i + 1}</td><td>${x.n}${x.bono ? ` <small>(incluye bono +${x.bono})</small>` : ""}</td><td class="n">${x.aciertos}/${x.total}</td><td class="n">${x.tiempo}s</td><td class="n">${x.puntos}</td></tr>`).join("")}</table>`;
     pub = { filas }; $("rk").hidden = !filas.length; msg("m2", `${filas.length} personas en el ranking.`);
   } catch (e) { msg("m2", "No se pudieron leer los resultados" + err(e)); }
+};
+$("limpiar").onclick = async () => {
+  if (prompt("Se borrarán TODOS los resultados, rankings, el podio y los bonos. Las preguntas y la configuración se conservan.\n\nEscribe LIMPIAR para confirmar:") !== "LIMPIAR") return msg("m6", "Cancelado.");
+  try {
+    const s = await fs.getDocs(fs.collection(db, "resultados")), ops = [];
+    s.forEach(d => ops.push(b => b.delete(d.ref)));
+    [...Q.map(q => "ranking_" + q.id), "ranking_general", "res_tier", "res_votos", "podio"].forEach(n => ops.push(b => b.delete(ref("publico", n))));
+    ops.push(b => b.set(ref("publico", "config"), { bonos: [] }, { merge: true }));
+    for (let i = 0; i < ops.length; i += 400) { const b = fs.writeBatch(db); ops.slice(i, i + 400).forEach(o => o(b)); await b.commit(); }
+    filas = []; pub = {}; BN = []; $("out").innerHTML = ""; $("out").className = ""; $("rk").hidden = true; poblar("");
+    msg("m6", `Listo: ${s.size} resultados borrados y rankings, podio y bonos eliminados.`);
+  } catch (e) { msg("m6", "No se pudo limpiar" + err(e)); }
 };
 $("bsave").onclick = async () => {
   const lista = [];
