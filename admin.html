@@ -29,6 +29,8 @@
 <div class="card"><h2>Podio final (Resultados de votación)</h2><p class="note">1.º: mayor puntaje general de minijuegos, con bonos (premio: Bono). 2.º: mejor foto de la tier list (Tarde de desconexión). 3.º: la persona que elijas (Lunes de llegar tarde). Antes del 3.º se revelan los 4 premios honoríficos: el ganador de cada categoría de la votación.</p>
 <label for="p3">Persona del 3.er puesto</label><select id="p3"></select>
 <button class="main" id="pod">Calcular y publicar podio</button><p class="note" id="m4"></p></div>
+<div class="card"><h2>Resumen en PDF</h2><p class="note">Descarga un PDF con el podio, los premios honoríficos, el ranking general, los puntos por minijuego, la tier list y la votación, calculados con los datos actuales. Descárgalo antes de usar "Limpiar todo".</p>
+<button class="main" id="pdf">Descargar resumen en PDF</button><p class="note" id="m7"></p></div>
 <div class="card"><h2>Limpiar todo</h2><p class="note">Borra los resultados de todos los quizzes, la tier list y la votación, los rankings publicados, el podio y los bonos. Se conservan las preguntas, los nombres, los títulos y qué quizzes están habilitados. No se puede deshacer.</p>
 <button class="peligro" id="limpiar">Limpiar todos los quizzes, rankings y votaciones</button><p class="note" id="m6"></p></div>
 </div></main>
@@ -53,7 +55,7 @@ const ref = (c, d) => fs.doc(db, c, d);
 const get = async (c, d) => { const s = await fs.getDoc(ref(c, d)); return s.exists() ? s.data() : null; };
 const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
 const err = e => " (" + (e.code || e.message) + ")" + (e.code === "permission-denied" ? ": actualiza las reglas de Firestore (falta la colección claves)" : "");
-const PMIN = 100, PMAX = 1000; // puntos por acierto: PMAX si responde al instante, PMIN al límite del tiempo
+const PMIN = 100, PMAX = 800; // puntos por acierto: PMAX si responde al instante, PMIN al límite del tiempo
 const T = 20, T0 = [{ id: "personas", titulo: "¿Quién es?", tipo: "personas", activo: false }, { id: "q1", titulo: "Quiz general 1", tipo: "general", activo: false }, { id: "q2", titulo: "Quiz general 2", tipo: "general", activo: false }];
 const CATS = [["jungla", "Jungla Zen"], ["copiloto", "Copiloto Estrella"], ["setup", "Setup Ergonómico"], ["rincon", "Rincón Creativo"]];
 let Q = T0.map(x => ({ ...x })), filas = [], A = { tier: false, votos: false }, pub = {}, BN = [];
@@ -195,6 +197,64 @@ $("calc").onclick = async () => {
     pub = { filas }; $("rk").hidden = !filas.length; msg("m2", `${filas.length} personas en el ranking.`);
   } catch (e) { msg("m2", "No se pudieron leer los resultados" + err(e)); }
 };
+const docsDe = async quiz => { const s = await fs.getDocs(fs.query(fs.collection(db, "resultados"), fs.where("quiz", "==", quiz))), d = []; s.forEach(x => d.push(x.data())); return d; };
+async function tierDatos(NM) {
+  const docs = await docsDe("tier"), acc = NM.map(n => ({ n, puntos: 0, primeros: 0 }));
+  docs.forEach(r => r.orden.forEach((f, k) => { const o = acc[f - 1]; if (o) { o.puntos += 15 - k; if (!k) o.primeros++; } }));
+  return { filas: acc.sort((a, b) => b.puntos - a.puntos || b.primeros - a.primeros), votantes: docs.length };
+}
+async function votosDatos(NM) {
+  const docs = await docsDe("votos");
+  return { votantes: docs.length, cats: CATS.map(([k, t]) => { const c = {}; docs.forEach(r => { const f = r.votos?.[k]; if (f) c[f] = (c[f] || 0) + 1; });
+    return { titulo: t, filas: Object.entries(c).map(([f, v]) => ({ n: NM[f - 1], votos: v })).sort((a, b) => b.votos - a.votos) }; }) };
+}
+// La librería de PDF solo se descarga al pulsar el botón (cdnjs, con jsDelivr de respaldo).
+const cargarLib = u => new Promise((ok, no) => { const s = document.createElement("script"); s.src = u; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+const pdfOk = () => !!window.jspdf?.jsPDF && typeof new window.jspdf.jsPDF().autoTable === "function";
+async function libsPDF() {
+  if (pdfOk()) return;
+  for (const [a, b] of [["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"],
+                        ["https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js", "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"]]) {
+    try { if (!window.jspdf) await cargarLib(a); await cargarLib(b); if (pdfOk()) return; } catch (e) { /* prueba el siguiente origen */ }
+  }
+  throw new Error("no se pudo cargar la librería de PDF; revisa tu conexión");
+}
+$("pdf").onclick = async () => {
+  msg("m7", "Generando PDF…");
+  try {
+    const NM = nombresFoto(); if (!NM) return msg("m7", "Escribe y guarda primero los 15 nombres de las fotos.");
+    await libsPDF();
+    const [gen, tier, vot, hon, foto, po] = await Promise.all([filasDe("general"), tierDatos(NM), votosDatos(NM), honorificos(NM), mejorFoto(), get("publico", "podio")]);
+    const por = []; for (const q of Q) por.push({ q, filas: await filasDe(q.id) });
+    const doc = new window.jspdf.jsPDF(); let y = 18;
+    const titulo = (t, tam = 14) => { if (y > 255) { doc.addPage(); y = 18; } doc.setFontSize(tam); doc.setTextColor(14, 87, 168); doc.text(t, 14, y); doc.setTextColor(0); y += 5; };
+    const tabla = (cab, filas) => { doc.autoTable({ startY: y, head: [cab], body: filas.length ? filas : [[{ content: "Sin datos", colSpan: cab.length }]], theme: "grid", styles: { fontSize: 9 }, headStyles: { fillColor: [14, 87, 168] }, margin: { left: 14, right: 14 } }); y = doc.lastAutoTable.finalY + 10; };
+    const cabR = ["#", "Nombre", "Aciertos", "Tiempo", "Puntos"];
+    const filaR = (f, i) => [i + 1, f.n + (f.bono ? ` (bono +${f.bono})` : ""), `${f.aciertos}/${f.total}`, `${f.tiempo} s`, f.puntos];
+    doc.setFontSize(20); doc.text("Resumen del evento", 14, y); y += 7;
+    doc.setFontSize(10); doc.setTextColor(110); doc.text("Generado el " + new Date().toLocaleString("es-CO"), 14, y); doc.setTextColor(0); y += 10;
+
+    titulo("1. Podio final");
+    tabla(["Puesto", "Persona", "Premio"], [["1.º", gen?.[0]?.n || "-", "Bono"], ["2.º", foto ? NM[foto - 1] : "-", "Tarde de desconexión"], ["3.º", $("p3").value || po?.tercero || "-", "Lunes de llegar tarde"]]);
+    titulo("Premios honoríficos", 12);
+    tabla(["Categoría", "Ganador/a", "Votos"], hon.map(h => [h.cat, h.n, h.votos]));
+    titulo("2. Ranking general de minijuegos (con bonos)");
+    tabla(cabR, (gen || []).map(filaR));
+    if (BN.length) { titulo("Bonos otorgados", 12); tabla(["Persona", "Puntos"], BN.map(b => [b.n, "+" + b.p])); }
+    titulo("3. Puntos por minijuego");
+    const pq = por.map(x => Object.fromEntries((x.filas || []).map(f => [f.n, f.puntos])));
+    tabla(["Nombre", ...por.map(x => x.q.titulo), "Bono", "Total"], (gen || []).map(f => [f.n, ...pq.map(m => m[f.n] ?? 0), f.bono || 0, f.puntos]));
+    titulo("4. Ranking de cada minijuego");
+    por.forEach(x => { titulo(x.q.titulo, 12); tabla(cabR, (x.filas || []).map(filaR)); });
+    titulo(`5. Tier list (${tier.votantes} votantes)`);
+    tabla(["#", "Persona", "Puntos", "1.º lugares"], tier.filas.map((f, i) => [i + 1, f.n, f.puntos, f.primeros]));
+    titulo(`6. Votación por categorías (${vot.votantes} votantes)`);
+    vot.cats.forEach(c => { titulo(c.titulo, 12); tabla(["#", "Persona", "Votos"], c.filas.map((f, i) => [i + 1, f.n, f.votos])); });
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120); doc.text(`Página ${i} de ${n}`, 105, 290, { align: "center" }); }
+    doc.save("resumen-quizzes.pdf"); msg("m7", "PDF descargado.");
+  } catch (e) { msg("m7", "No se pudo generar el PDF (" + (e.code || e.message) + ")."); }
+};
 $("limpiar").onclick = async () => {
   if (prompt("Se borrarán TODOS los resultados, rankings, el podio y los bonos. Las preguntas y la configuración se conservan.\n\nEscribe LIMPIAR para confirmar:") !== "LIMPIAR") return msg("m6", "Cancelado.");
   try {
@@ -213,7 +273,7 @@ $("bsave").onclick = async () => {
     const n = $("bn" + i).value, raw = $("bp" + i).value, p = Number(raw);
     if (!n && !raw) continue;
     if (!n) return msg("m3", `Fila ${i + 1}: elige la persona.`);
-    if (!Number.isInteger(p) || p < 100 || p > 500) return msg("m3", `Fila ${i + 1}: los puntos deben ser un número entero entre 100 y 500.`);
+    if (!Number.isInteger(p) || p < 10 || p > 50) return msg("m3", `Fila ${i + 1}: los puntos deben ser un número entero entre 10 y 50.`);
     if (lista.some(x => x.n === n)) return msg("m3", `${n} está repetida.`);
     lista.push({ n, p });
   }
